@@ -49,9 +49,9 @@ NUM_WORKERS = cpu_count() - 1
 def compute_track_predictions(batch_i, data, params):
     history_measurements = np.hstack((data[batch_i]['history_positions'],
                                       data[batch_i]['history_velocities']))
-    params.update({'init_measurements': history_measurements[0]})
+    params.update({'fps': 10})
     kalman_tracker_predictor = KalmanTrackerPredictor(**params)
-    kalman_tracker_predictor.process_history(history_measurements)
+    kalman_tracker_predictor.process_history(history_measurements, data[batch_i]['history_availabilities'])
     future_coords_offsets = kalman_tracker_predictor.predict_future_positions()
     timestamp = data[batch_i]['timestamp']
     agent_id = data[batch_i]['track_id']
@@ -79,14 +79,10 @@ class KalmanInitializationOptimizer:
                                      'y_coordinate_speed_cov_adjustment',
                                      'x_coordinate_cov_adjustment',
                                      'y_coordinate_cov_adjustment',
-                                     'x_coordinate_acceleration_adjustment',
-                                     'y_coordinate_acceleration_adjustment',
                                      'noise_in_x_coordinate_speed_cov_adjustment',
                                      'noise_in_y_coordinate_speed_cov_adjustment',
                                      'noise_in_x_coordinate_cov_adjustment',
-                                     'noise_in_y_coordinate_cov_adjustment',
-                                     'noise_in_x_coordinate_acceleration_adjustment',
-                                     'noise_in_y_coordinate_acceleration_adjustment']
+                                     'noise_in_y_coordinate_cov_adjustment']
 
         for cov_adjustment_param in cov_adjustment_parameters:
             self.dimensions.append(Real(*cov_adjustment_range, 'log-uniform', name=cov_adjustment_param))
