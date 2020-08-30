@@ -6,12 +6,12 @@ with warnings.catch_warnings():
     import sys
 
     if os.name == 'nt':
-        from scripts.l5kit_modified import AgentDatasetModified
+        from scripts.l5kit_modified import AgentDatasetModified, create_chopped_dataset
         from scripts.kalman import KalmanTrackerPredictor
 
         os.environ["L5KIT_DATA_FOLDER"] = "input/"
     elif os.name == 'posix':
-        from l5kit_modified import AgentDatasetModified
+        from l5kit_modified import AgentDatasetModified, create_chopped_dataset
         from kalman import KalmanTrackerPredictor
 
         os.environ["L5KIT_DATA_FOLDER"] = "../input/"
@@ -30,7 +30,7 @@ with warnings.catch_warnings():
     import argparse
     import json
     from tqdm.auto import tqdm
-    from l5kit.evaluation import write_pred_csv, compute_metrics_csv, create_chopped_dataset
+    from l5kit.evaluation import write_pred_csv, compute_metrics_csv
     from l5kit.evaluation.metrics import neg_multi_log_likelihood
     from l5kit.data import LocalDataManager, ChunkedDataset
     from torch.utils.data import DataLoader
@@ -47,8 +47,7 @@ NUM_WORKERS = cpu_count() - 1
 
 
 def compute_track_predictions(batch_i, data, params):
-    history_measurements = np.hstack((data[batch_i]['history_positions'],
-                                      data[batch_i]['history_velocities']))
+    history_measurements = data[batch_i]['history_positions']
     params.update({'fps': 10})
     kalman_tracker_predictor = KalmanTrackerPredictor(**params)
     kalman_tracker_predictor.process_history(history_measurements, data[batch_i]['history_availabilities'])
@@ -67,14 +66,13 @@ class KalmanInitializationOptimizer:
                  cov_adjustment_range=(0.001, 10000),
                  debug=False,
                  batch_size=None,
-                 num_workers=None):
+                 num_workers=None,
+                 percentage_of_dataset_scenes=1.0):
         self.counter = 0
-        self.dimensions = [Integer(NUM_FRAMES_TO_CHOP-1, NUM_FRAMES_TO_CHOP, name='history_num_frames'),
-                           Integer(1, 2, name='history_step_size')]
+        self.dimensions = [Integer(50, NUM_FRAMES_TO_CHOP, name='history_num_frames'),
+                           Integer(1, 5, name='history_step_size')]
         cov_adjustment_parameters = ['measured_noise_x_coordinate_cov_adjustment',
                                      'measured_noise_y_coordinate_cov_adjustment',
-                                     'measured_noise_x_speed_coordinate_cov_adjustment',
-                                     'measured_noise_y_speed_coordinate_cov_adjustment',
                                      'x_coordinate_speed_cov_adjustment',
                                      'y_coordinate_speed_cov_adjustment',
                                      'x_coordinate_cov_adjustment',
@@ -116,7 +114,8 @@ class KalmanInitializationOptimizer:
                                                      FILTER_AGENTS_THRESHOLD,
                                                      NUM_FRAMES_TO_CHOP,
                                                      FUTURE_NUM_FRAMES,
-                                                     MIN_FUTURE_STEPS)
+                                                     MIN_FUTURE_STEPS,
+                                                     percentage_of_dataset_scenes)
         self.logger.info(
             f"eval_base_path: {self.eval_base_path}")
         self.eval_gt_path = os.path.join(self.eval_base_path, 'gt.csv')
@@ -224,6 +223,11 @@ def parse_args():
         default='scenes/validate.zarr'
     )
     parser.add_argument(
+        '--percentage-of-dataset-scenes',
+        default=1.0,
+        type=float
+    )
+    parser.add_argument(
         '--optimizer-calls-num',
         default=150,
         type=int
@@ -260,5 +264,6 @@ if __name__ == '__main__':
                                               args.experiment_name,
                                               debug=args.debug,
                                               num_workers=args.allocated_cpus_num,
-                                              batch_size=args.batch_size)
+                                              batch_size=args.batch_size,
+                                              percentage_of_dataset_scenes=args.percentage_of_dataset_scenes)
     optimizer.get_optimized_parameters()

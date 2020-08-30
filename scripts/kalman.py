@@ -13,8 +13,6 @@ class KalmanTrackerPredictor(object):
     def __init__(self,
                  measured_noise_x_coordinate_cov_adjustment,
                  measured_noise_y_coordinate_cov_adjustment,
-                 measured_noise_x_speed_coordinate_cov_adjustment,
-                 measured_noise_y_speed_coordinate_cov_adjustment,
                  x_coordinate_speed_cov_adjustment,
                  y_coordinate_speed_cov_adjustment,
                  x_coordinate_cov_adjustment,
@@ -31,7 +29,7 @@ class KalmanTrackerPredictor(object):
         """
         # define constant acceleration model
         self.kf = KalmanFilter(dim_x=4,
-                               dim_z=4)
+                               dim_z=2)
         dt = 1 / fps if not fps is None else 1
         self.z_cov = self.z_mean = None
         self.appearance_emb = None
@@ -43,9 +41,7 @@ class KalmanTrackerPredictor(object):
              ])  # self-likeness
         self.kf.H = np.array(
             [[1, 0, 0, 0],
-             [0, 1, 0, 0],
-             [0, 0, 1, 0],
-             [0, 0, 0, 1]])
+             [0, 1, 0, 0]])
 
         def adjust_state_covariance_matrix(cov, x_coordinate_speed_adjustment, y_coordinate_speed_adjustment,
                                            x_coordinate_adjustment, y_coordinate_adjustment):
@@ -56,19 +52,14 @@ class KalmanTrackerPredictor(object):
             return cov
 
         def adjust_measurement_covariance_matrix(cov,
-                                                 x_coordinate_adjustment, y_coordinate_adjustment,
-                                                 x_speed_coordinate_adjustment, y_speed_coordinate_adjustment):
+                                                 x_coordinate_adjustment, y_coordinate_adjustment):
             cov[0, 0] *= x_coordinate_adjustment
             cov[1, 1] *= y_coordinate_adjustment
-            cov[2, 2] *= x_speed_coordinate_adjustment
-            cov[3, 3] *= y_speed_coordinate_adjustment
             return cov
 
         self.kf.R = adjust_measurement_covariance_matrix(self.kf.R,
                                                          measured_noise_x_coordinate_cov_adjustment,
-                                                         measured_noise_y_coordinate_cov_adjustment,
-                                                         measured_noise_x_speed_coordinate_cov_adjustment,
-                                                         measured_noise_y_speed_coordinate_cov_adjustment)
+                                                         measured_noise_y_coordinate_cov_adjustment)
 
         self.kf.P = adjust_state_covariance_matrix(self.kf.P, x_coordinate_speed_cov_adjustment,
                                                    y_coordinate_speed_cov_adjustment,
@@ -107,7 +98,7 @@ class KalmanTrackerPredictor(object):
         idx = history_measurements.shape[0] - 1
         while history_availabilities[idx] == 0 and idx > 0:
             idx -= 1
-        self.kf.x = history_measurements[idx].reshape(-1, 1)
+        self.kf.x[:2] = history_measurements[idx].reshape(-1, 1)
         for hist_idx in range(idx - 1, 0, -1):
             self.predict()
             self.update(history_measurements[hist_idx])
