@@ -6,7 +6,7 @@ with warnings.catch_warnings():
     import sys
 
     if os.name == 'nt':
-        from scripts.l5kit_modified import AgentDatasetModified, create_chopped_dataset
+        from scripts.l5kit_modified.l5kit_modified import AgentDatasetModified, create_chopped_dataset
         from scripts.kalman import KalmanTrackerPredictor
 
         os.environ["L5KIT_DATA_FOLDER"] = "input/"
@@ -20,7 +20,6 @@ with warnings.catch_warnings():
     from skopt import gp_minimize
     from skopt.space import Real, Integer
     from skopt.utils import use_named_args
-    from skopt.callbacks import CheckpointSaver
     import pickle
     import logging
     from logging.handlers import RotatingFileHandler

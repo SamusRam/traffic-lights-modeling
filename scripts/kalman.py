@@ -103,12 +103,17 @@ class KalmanTrackerPredictor(object):
             self.predict()
             self.update(history_measurements[hist_idx])
 
-    def predict_future_positions(self, n_steps=50):
+    def predict_future_positions(self, n_steps=50, multi_mode=False):
         future_coordinates = []
         for step in range(n_steps):
             self.predict()
             future_coordinates.append(self.z_mean[:2])
-        return np.expand_dims(np.vstack(future_coordinates), 0)
+        if multi_mode:
+            future_coordinates = np.vstack(future_coordinates)
+            future_coordinates = np.stack([future_coordinates for _ in range(3)])
+        else:
+            future_coordinates = np.vstack(future_coordinates)
+        return np.expand_dims(future_coordinates, 0)
 
     def get_state(self):
         """
