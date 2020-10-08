@@ -134,6 +134,16 @@ class MapAPI:
         """
         return bool(element.element.HasField("junction"))
 
+    def is_traffic_control_element(self, element_id: str) -> bool:
+        """
+        Args:
+            element (MapElement): a proto element
+
+        Returns:
+        """
+        element = self[element_id]
+        return bool(element.element.HasField("traffic_control_element"))
+
     def is_primary_road(self, element_id: str) -> bool:
         """
         Check whether a RoadNetworkSegment is primary road
@@ -215,8 +225,97 @@ class MapAPI:
         assert self.is_lane(element)
 
         lane = element.element.lane
-        return list(lane.lanes_ahead)
+        return [self.id_as_str(x) for x in lane.lanes_ahead]
 
+    def get_lane_to_left(self, element_id: str) -> str:
+        """
+        // If any, the lanes a car would get to by executing a lane change maneuver.
+    // The lane can be assumed to be physically adjacent to the current lane.
+    // A 0 ID (the default when the field is not set) indicates the maneuver in that direction
+    // is not allowed.
+
+        Args:
+            element_id (str): lane element id
+
+        Returns:
+        """
+        element = self[element_id]
+        assert self.is_lane(element)
+
+        lane = element.element.lane
+        return self.id_as_str(lane.adjacent_lane_change_left) if lane.HasField('adjacent_lane_change_left') and self.id_as_str(lane.adjacent_lane_change_left) != '0' else ''
+
+    def get_lane_to_right(self, element_id: str) -> str:
+        """
+        // If any, the lanes a car would get to by executing a lane change maneuver.
+    // The lane can be assumed to be physically adjacent to the current lane.
+    // A 0 ID (the default when the field is not set) indicates the maneuver in that direction
+    // is not allowed.
+
+        Args:
+            element_id (str): lane element id
+
+        Returns:
+        """
+        element = self[element_id]
+        assert self.is_lane(element)
+
+        lane = element.element.lane
+        return self.id_as_str(lane.adjacent_lane_change_right) if lane.HasField('adjacent_lane_change_right') and self.id_as_str(lane.adjacent_lane_change_right) != '0' else ''
+
+    def get_lanes_to_yield(self, element_id: str) -> list:
+        """
+        // Set of lanes to support ceding right of way: the ego car is expected to yield to any
+    // vehicles close enough in one of these lanes. If the lane is in a traffic-light-controlled
+    // intersection, the yield set here only applies when the traffic light is not functional.
+    // If it is functional, the traffic light state and yield sets associated with the light faces
+    // override this.
+
+        Args:
+            element_id (str): lane element id
+
+        Returns:
+        """
+        element = self[element_id]
+        assert self.is_lane(element)
+
+        lane = element.element.lane
+        return list(lane.yield_to_lanes)
+
+    def get_lane_traffic_controls(self, element_id: str) -> list:
+        """
+        // Traffic signals, e.g. traffic lights or individual "faces" of traffic lights, stop signs,
+    // yield signs, etc. controlling the exit from the lane onto one of the lanes ahead.
+    // It is assumed that conceptual line to cross according to the signal is the exit boundary of
+    // the lane, i.e. the line formed by the last vertex of the left boundary and the last vertex
+    // of the right boundary.
+
+        Args:
+            element_id (str): lane element id
+
+        Returns:
+        """
+        element = self[element_id]
+        assert self.is_lane(element)
+
+        lane = element.element.lane
+        return list(lane.traffic_controls)
+
+    def get_traffic_control_lanes_under_control(self, element_id: str) -> list:
+        """
+        // The lanes that the signal controls. Each sequence starts with the lane in which the car
+    // needs to observe the signal, followed by the lane sequence to which it can proceed according
+    // to the signal.
+
+        Args:
+            element_id (str): traffic control element id
+
+        Returns:
+        """
+        element = self[element_id]
+
+        traffic_control = element.element.traffic_control_element
+        return list(traffic_control.controlled_paths)
 
     def get_lane_orientation(self, element_id: str) -> str:
         """
@@ -277,6 +376,29 @@ class MapAPI:
 
         return {"xyz": xyz}
 
+    def get_traffic_light_coords(self, element_id: str) -> dict:
+        """
+        Get XYZ coordinates in world ref system for a crosswalk given its id
+        lru_cached for O(1) access
+
+        Args:
+            element_id (str): crosswalk element id
+
+        Returns:
+            dict: a dict with the polygon coordinates as an (Nx3) XYZ array
+        """
+        element = self[element_id]
+        traffic_element = element.element.traffic_control_element
+
+        xyz = self.unpack_deltas_cm(
+            traffic_element.points_x_deltas_cm,
+            traffic_element.points_y_deltas_cm,
+            traffic_element.points_z_deltas_cm,
+            traffic_element.geo_frame,
+        )
+
+        return {"xyz": xyz}
+
     def is_traffic_face_colour(self, element_id: str, colour: str) -> bool:
         """
         Check if the element is a traffic light face of the given colour
@@ -297,9 +419,58 @@ class MapAPI:
             or traffic_el.HasField(f"signal_right_arrow_{colour}_face")
             or traffic_el.HasField(f"signal_upper_left_arrow_{colour}_face")
             or traffic_el.HasField(f"signal_upper_right_arrow_{colour}_face")
+            or traffic_el.HasField(f"signal_{colour}_u_turn")
         ):
             return True
         return False
+
+    def get_traffic_light_face_sets(self, element_id):
+        """
+
+        Args:
+            element_id (str): the id (utf-8 encode) of the element
+        Returns:
+        """
+        element = self[element_id]
+        if not element.element.HasField("traffic_control_element"):
+            return None
+        traffic_el = element.element.traffic_control_element
+        results = []
+        for colour in ['red', 'green', 'yellow']:
+            for face_set_name in [f"signal_{colour}_face",
+                                  f"signal_left_arrow_{colour}_face",
+                                  f"signal_right_arrow_{colour}_face",
+                                  f"signal_upper_left_arrow_{colour}_face",
+                                  f"signal_upper_right_arrow_{colour}_face",
+                                  f"signal_{colour}_u_turn"]:
+                if traffic_el.HasField(face_set_name):
+                    results.append((getattr(traffic_el, face_set_name), face_set_name))
+        return results
+
+    def get_rules_for_traffic_light_face_set(self, traffic_light_face_set):
+        """
+        Args:
+
+        Returns:
+            list of tuples (lane, yield_to_lanes, yield_to_crosswalks)
+            / The lane where the cars need to observe the traffic light.
+            lane
+
+            // The set of all other lanes that the lane above needs to yield to.
+            yield_to_lanes
+
+            // List of crosswalks that are not safe to ignore when this light face is on.
+            // For example, on green, the intersection lane turning right needs to yield to the
+            // pedestrian crosswalk for pedestrians going straight.
+            yield_to_crosswalks
+        """
+        result = []
+        for yield_rules_when_on_ in traffic_light_face_set.yield_rules_when_on:
+            lane = yield_rules_when_on_.lane
+            yield_to_lanes = yield_rules_when_on_.yield_to_lanes
+            yield_to_crosswalks = yield_rules_when_on_.yield_to_crosswalks
+            result.append({'lane': lane, 'yield_to_lanes': yield_to_lanes, 'yield_to_crosswalks': yield_to_crosswalks})
+        return result
 
     def get_lane_parent(self, element_id: str) -> bool:
         """
@@ -316,6 +487,7 @@ class MapAPI:
             raise ValueError(f"The element {element_id} is not a lane.")
         parent_element_id = element_instance.element.lane.parent_segment_or_junction
         return parent_element_id
+
 
     @no_type_check
     def __getitem__(self, item: Union[int, str, bytes]) -> MapElement:

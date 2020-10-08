@@ -151,6 +151,133 @@ def get_lane_segments_sin_cosine(xy_seq_np):
     return idx_2_sin_cos_forward, list(reversed(idx_2_sin_cos_backward))
 
 
+def precompute_map_elements(proto_API):
+    lanes_ids = []
+    crosswalks_ids = []
+    center_line_coords = []
+    xy_left_coords = []
+    xy_right_coords = []
+    xy_left_coords_ = []
+    xy_right_coords_ = []
+
+    lane_point_idx_2_cumul_distances = []
+    lane_point_idx_2_sin_cos_forward = []
+    lane_point_idx_2_sin_cos_backward = []
+
+    lanes_bounds = np.empty((0, 2, 2), dtype=np.float)  # [(X_MIN, Y_MIN), (X_MAX, Y_MAX)]
+    crosswalks_bounds = np.empty((0, 2, 2), dtype=np.float)  # [(X_MIN, Y_MIN), (X_MAX, Y_MAX)]
+
+    for element in tqdm(proto_API):
+        element_id = MapAPI.id_as_str(element.id)
+
+        if proto_API.is_lane(element):
+            lane = proto_API.get_lane_coords(element_id)
+            x_min = min(np.min(lane["xyz_left"][:, 0]), np.min(lane["xyz_right"][:, 0]))
+            y_min = min(np.min(lane["xyz_left"][:, 1]), np.min(lane["xyz_right"][:, 1]))
+            x_max = max(np.max(lane["xyz_left"][:, 0]), np.max(lane["xyz_right"][:, 0]))
+            y_max = max(np.max(lane["xyz_left"][:, 1]), np.max(lane["xyz_right"][:, 1]))
+
+            x_left_, y_left_ = densify_sparse_segments(lane["xyz_left"][:, 0],
+                                                       lane["xyz_left"][:, 1])
+            x_right_, y_right_ = densify_sparse_segments(lane["xyz_right"][:, 0],
+                                                         lane["xyz_right"][:, 1])
+
+            if len(x_left_) == len(x_right_):
+                x_right = x_right_
+                x_left = x_left_
+
+                y_right = y_right_
+                y_left = y_left_
+
+            elif len(x_left_) < len(x_right_):
+                x_right = x_right_
+                x_left = np.interp(np.linspace(0, len(x_left_) - 1, len(x_right)),
+                                   np.arange(len(x_left_)), x_left_)
+
+                y_right = y_right_
+                y_left = np.interp(np.linspace(0, len(y_left_) - 1, len(y_right)),
+                                   np.arange(len(y_left_)), y_left_)
+
+            elif len(x_left_) > len(x_right_):
+                x_left = x_left_
+                x_right = np.interp(np.linspace(0, len(x_right_) - 1, len(x_left)),
+                                    np.arange(len(x_right_)), x_right_)
+
+                y_left = y_left_
+                y_right = np.interp(np.linspace(0, len(y_right_) - 1, len(y_left)),
+                                    np.arange(len(y_right_)), y_right_)
+            else:
+                raise Exception('Bug in lane length comparison')
+            assert len(x_left) == len(x_right)
+
+            center_line = np.transpose(np.vstack(((x_left + x_right) / 2,
+                                                  (y_left + y_right) / 2)))
+            center_line = sparsify(center_line)
+
+            lanes_bounds = np.append(lanes_bounds, np.asarray([[[x_min, y_min], [x_max, y_max]]]), axis=0)
+            lanes_ids.append(element_id)
+            center_line_coords.append(center_line)
+            xy_left_coords.append(lane["xyz_left"][:, :2])
+            xy_right_coords.append(lane["xyz_right"][:, :2])
+            xy_left_dense = np.transpose(np.vstack((x_left, y_left)))
+            xy_right_dense = np.transpose(np.vstack((x_right, y_right)))
+            xy_left_coords_.append(sparsify(xy_left_dense))
+            xy_right_coords_.append(sparsify(xy_right_dense))
+
+            lane_point_idx_2_cumul_distances.append(get_lane_cumul_distances(center_line))
+            idx_2_sin_cos_forward, idx_2_sin_cos_backward = get_lane_segments_sin_cosine(center_line)
+            lane_point_idx_2_sin_cos_forward.append(idx_2_sin_cos_forward)
+            lane_point_idx_2_sin_cos_backward.append(idx_2_sin_cos_backward)
+            assert len(idx_2_sin_cos_forward) == len(idx_2_sin_cos_backward) == len(center_line)
+
+        if proto_API.is_crosswalk(element):
+            crosswalk = proto_API.get_crosswalk_coords(element_id)
+            x_min = np.min(crosswalk["xyz"][:, 0])
+            y_min = np.min(crosswalk["xyz"][:, 1])
+            x_max = np.max(crosswalk["xyz"][:, 0])
+            y_max = np.max(crosswalk["xyz"][:, 1])
+
+            crosswalks_bounds = np.append(
+                crosswalks_bounds, np.asarray([[[x_min, y_min], [x_max, y_max]]]), axis=0,
+            )
+            crosswalks_ids.append(element_id)
+
+    return {
+        "lanes": {"bounds": lanes_bounds, "ids": lanes_ids,
+                  "center_line": center_line_coords,
+                  "xy_left": xy_left_coords, "xy_right": xy_right_coords,
+                  "xy_left_": xy_left_coords_, "xy_right_": xy_right_coords_,
+                  "lane_point_idx_2_cumul_distances": lane_point_idx_2_cumul_distances,
+                  "lane_point_idx_2_sin_cos_forward": lane_point_idx_2_sin_cos_forward,
+                  "lane_point_idx_2_sin_cos_backward": lane_point_idx_2_sin_cos_backward
+                  },
+        "crosswalks": {"bounds": crosswalks_bounds, "ids": crosswalks_ids},
+    }
+
+
+def precompute_lane_adjacencies(id_2_idx, proto_API):
+    lane_adj_list_forward = [[] for _ in range(len(id_2_idx))]
+    lane_adj_list_backward = [[] for _ in range(len(id_2_idx))]
+    lane_adj_list_right = [[] for _ in range(len(id_2_idx))]
+    lane_adj_list_left = [[] for _ in range(len(id_2_idx))]
+
+    for element in tqdm(proto_API, desc='Computing lane adjacency lists'):
+        element_id = MapAPI.id_as_str(element.id)
+        if proto_API.is_lane(element):
+            lanes_ahead = proto_API.get_lanes_ahead(element_id)
+            lane_adj_list_forward[id_2_idx[element_id]].extend(lanes_ahead)
+            for lane_ahead_id in lanes_ahead:
+                lane_adj_list_backward[id_2_idx[lane_ahead_id]].append(element_id)
+
+            lane_left = proto_API.get_lane_to_left(element_id)
+            if lane_left != '':
+                lane_adj_list_left[id_2_idx[element_id]].append(lane_left)
+            lane_right = proto_API.get_lane_to_right(element_id)
+            if lane_right != '':
+                lane_adj_list_right[id_2_idx[element_id]].append(lane_right)
+
+    return lane_adj_list_forward, lane_adj_list_backward, lane_adj_list_right, lane_adj_list_left
+
 ################# NAIVE LANE FOLLOWER ##################
 class ConstantSpeedLaneFollower:
 
@@ -161,9 +288,9 @@ class ConstantSpeedLaneFollower:
         self.dataset = AgentDatasetModified(cfg, eval_zarr)
         semantic_map_path = dm.require(semantic_map_key)
         self.proto_API = MapAPI(semantic_map_path, world_to_ecef)
-        self.lanes_crosswalks = self.precompute_map_elements()
+        self.lanes_crosswalks = precompute_map_elements(self.proto_API)
         self.id_2_idx = {lane_id: i for i, lane_id in enumerate(self.lanes_crosswalks['lanes']['ids'])}
-        self.lane_adj_list_forward, self.lane_adj_list_backward = self.precompute_lane_adjacencies()
+        self.lane_adj_list_forward, self.lane_adj_list_backward = precompute_lane_adjacencies(self.id_2_idx, self.proto_API)
         all_center_coords = np.concatenate(self.lanes_crosswalks['lanes']['center_line'], axis=0)
         self.kd_tree = KDTree(all_center_coords)
 
@@ -172,122 +299,6 @@ class ConstantSpeedLaneFollower:
                                         self.lanes_crosswalks['lanes']['center_line']):
             next_entries = [(lane_id, i) for i in range(len(center_line))]
             self.kd_idx_2_lane_id_idx.extend(next_entries)
-
-    def precompute_map_elements(self):
-        lanes_ids = []
-        crosswalks_ids = []
-        center_line_coords = []
-        xy_left_coords = []
-        xy_right_coords = []
-        xy_left_coords_ = []
-        xy_right_coords_ = []
-
-        lane_point_idx_2_cumul_distances = []
-        lane_point_idx_2_sin_cos_forward = []
-        lane_point_idx_2_sin_cos_backward = []
-
-        lanes_bounds = np.empty((0, 2, 2), dtype=np.float)  # [(X_MIN, Y_MIN), (X_MAX, Y_MAX)]
-        crosswalks_bounds = np.empty((0, 2, 2), dtype=np.float)  # [(X_MIN, Y_MIN), (X_MAX, Y_MAX)]
-
-        for element in tqdm(self.proto_API):
-            element_id = MapAPI.id_as_str(element.id)
-
-            if self.proto_API.is_lane(element):
-                lane = self.proto_API.get_lane_coords(element_id)
-                x_min = min(np.min(lane["xyz_left"][:, 0]), np.min(lane["xyz_right"][:, 0]))
-                y_min = min(np.min(lane["xyz_left"][:, 1]), np.min(lane["xyz_right"][:, 1]))
-                x_max = max(np.max(lane["xyz_left"][:, 0]), np.max(lane["xyz_right"][:, 0]))
-                y_max = max(np.max(lane["xyz_left"][:, 1]), np.max(lane["xyz_right"][:, 1]))
-
-                x_left_, y_left_ = densify_sparse_segments(lane["xyz_left"][:, 0],
-                                                           lane["xyz_left"][:, 1])
-                x_right_, y_right_ = densify_sparse_segments(lane["xyz_right"][:, 0],
-                                                             lane["xyz_right"][:, 1])
-
-                if len(x_left_) == len(x_right_):
-                    x_right = x_right_
-                    x_left = x_left_
-
-                    y_right = y_right_
-                    y_left = y_left_
-
-                elif len(x_left_) < len(x_right_):
-                    x_right = x_right_
-                    x_left = np.interp(np.linspace(0, len(x_left_) - 1, len(x_right)),
-                                       np.arange(len(x_left_)), x_left_)
-
-                    y_right = y_right_
-                    y_left = np.interp(np.linspace(0, len(y_left_) - 1, len(y_right)),
-                                       np.arange(len(y_left_)), y_left_)
-
-                elif len(x_left_) > len(x_right_):
-                    x_left = x_left_
-                    x_right = np.interp(np.linspace(0, len(x_right_) - 1, len(x_left)),
-                                        np.arange(len(x_right_)), x_right_)
-
-                    y_left = y_left_
-                    y_right = np.interp(np.linspace(0, len(y_right_) - 1, len(y_left)),
-                                        np.arange(len(y_right_)), y_right_)
-                else:
-                    raise Exception('Bug in lane length comparison')
-                assert len(x_left) == len(x_right)
-
-                center_line = np.transpose(np.vstack(((x_left + x_right) / 2,
-                                                      (y_left + y_right) / 2)))
-                center_line = sparsify(center_line)
-
-                lanes_bounds = np.append(lanes_bounds, np.asarray([[[x_min, y_min], [x_max, y_max]]]), axis=0)
-                lanes_ids.append(element_id)
-                center_line_coords.append(center_line)
-                xy_left_coords.append(lane["xyz_left"][:, :2])
-                xy_right_coords.append(lane["xyz_right"][:, :2])
-                xy_left_dense = np.transpose(np.vstack((x_left, y_left)))
-                xy_right_dense = np.transpose(np.vstack((x_right, y_right)))
-                xy_left_coords_.append(sparsify(xy_left_dense))
-                xy_right_coords_.append(sparsify(xy_right_dense))
-
-                lane_point_idx_2_cumul_distances.append(get_lane_cumul_distances(center_line))
-                idx_2_sin_cos_forward, idx_2_sin_cos_backward = get_lane_segments_sin_cosine(center_line)
-                lane_point_idx_2_sin_cos_forward.append(idx_2_sin_cos_forward)
-                lane_point_idx_2_sin_cos_backward.append(idx_2_sin_cos_backward)
-                assert len(idx_2_sin_cos_forward) == len(idx_2_sin_cos_backward) == len(center_line)
-
-            if self.proto_API.is_crosswalk(element):
-                crosswalk = self.proto_API.get_crosswalk_coords(element_id)
-                x_min = np.min(crosswalk["xyz"][:, 0])
-                y_min = np.min(crosswalk["xyz"][:, 1])
-                x_max = np.max(crosswalk["xyz"][:, 0])
-                y_max = np.max(crosswalk["xyz"][:, 1])
-
-                crosswalks_bounds = np.append(
-                    crosswalks_bounds, np.asarray([[[x_min, y_min], [x_max, y_max]]]), axis=0,
-                )
-                crosswalks_ids.append(element_id)
-
-        return {
-            "lanes": {"bounds": lanes_bounds, "ids": lanes_ids,
-                      "center_line": center_line_coords,
-                      "xy_left": xy_left_coords, "xy_right": xy_right_coords,
-                      "xy_left_": xy_left_coords_, "xy_right_": xy_right_coords_,
-                      "lane_point_idx_2_cumul_distances": lane_point_idx_2_cumul_distances,
-                      "lane_point_idx_2_sin_cos_forward": lane_point_idx_2_sin_cos_forward,
-                      "lane_point_idx_2_sin_cos_backward": lane_point_idx_2_sin_cos_backward
-                      },
-            "crosswalks": {"bounds": crosswalks_bounds, "ids": crosswalks_ids},
-        }
-
-    def precompute_lane_adjacencies(self):
-        lane_adj_list_forward = [[] for _ in range(len(self.id_2_idx))]
-        lane_adj_list_backward = [[] for _ in range(len(self.id_2_idx))]
-
-        for element in tqdm(self.proto_API, desc='Computing lane adjacency lists'):
-            element_id = MapAPI.id_as_str(element.id)
-            if self.proto_API.is_lane(element):
-                lanes_ahead = [self.proto_API.id_as_str(x) for x in self.proto_API.get_lanes_ahead(element_id)]
-                lane_adj_list_forward[self.id_2_idx[element_id]].extend(lanes_ahead)
-                for lane_ahead_id in lanes_ahead:
-                    lane_adj_list_backward[self.id_2_idx[lane_ahead_id]].append(element_id)
-        return lane_adj_list_forward, lane_adj_list_backward
 
     def get_predicted_coordinates(self, start_point_coord, lane_id, lane_point_idx, forward, speed_m_per_frame,
                                   current_overshoot_m=0, n_prediction_steps=50, include_start=False):
