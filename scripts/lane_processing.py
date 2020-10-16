@@ -278,6 +278,37 @@ def precompute_lane_adjacencies(id_2_idx, proto_API):
 
     return lane_adj_list_forward, lane_adj_list_backward, lane_adj_list_right, lane_adj_list_left
 
+
+def cos_dist(x1, y1, yaw_rad):
+    x2 = np.cos(yaw_rad)
+    y2 = np.sin(yaw_rad)
+    vector_product = x1 * x2 + y1 * y2
+    cos = vector_product / (np.hypot(x1, y1) * np.hypot(x2, y2))
+    return 1 - cos
+
+
+def find_closest_lane(coord, yaw, kd_tree, kd_idx_2_lane_id_idx, lanes_crosswalks, lane_id_2_idx):
+    candidate_indices = kd_tree.query_ball_point(coord, r=3)
+    closed_set = set()
+    min_cos_dist = float('inf')
+    result_lane_id = None
+    for i, candidate_idx in enumerate(candidate_indices):
+        lane_id, point_idx = kd_idx_2_lane_id_idx[candidate_idx]
+        if lane_id not in closed_set:
+            closed_set.add(lane_id)
+            lane_center_line = lanes_crosswalks['lanes']['center_line'][lane_id_2_idx[lane_id]]
+            if point_idx < len(lane_center_line) - 1:
+                x1 = lane_center_line[point_idx + 1][0] - lane_center_line[point_idx][0]
+                y1 = lane_center_line[point_idx + 1][1] - lane_center_line[point_idx][1]
+            else:  # there're always at least 2 points
+                x1 = lane_center_line[point_idx][0] - lane_center_line[point_idx - 1][0]
+                y1 = lane_center_line[point_idx][1] - lane_center_line[point_idx - 1][1]
+            lane_cos_dist = cos_dist(x1, y1, yaw)
+            if lane_cos_dist < min_cos_dist:
+                min_cos_dist = lane_cos_dist
+                result_lane_id = lane_id
+    return result_lane_id
+
 ################# NAIVE LANE FOLLOWER ##################
 class ConstantSpeedLaneFollower:
 
@@ -290,7 +321,7 @@ class ConstantSpeedLaneFollower:
         self.proto_API = MapAPI(semantic_map_path, world_to_ecef)
         self.lanes_crosswalks = precompute_map_elements(self.proto_API)
         self.id_2_idx = {lane_id: i for i, lane_id in enumerate(self.lanes_crosswalks['lanes']['ids'])}
-        self.lane_adj_list_forward, self.lane_adj_list_backward = precompute_lane_adjacencies(self.id_2_idx, self.proto_API)
+        self.lane_adj_list_forward, self.lane_adj_list_backward, _, _ = precompute_lane_adjacencies(self.id_2_idx, self.proto_API)
         all_center_coords = np.concatenate(self.lanes_crosswalks['lanes']['center_line'], axis=0)
         self.kd_tree = KDTree(all_center_coords)
 
