@@ -287,26 +287,30 @@ def cos_dist(x1, y1, yaw_rad):
     return 1 - cos
 
 
-def find_closest_lane(coord, yaw, kd_tree, kd_idx_2_lane_id_idx, lanes_crosswalks, lane_id_2_idx):
-    candidate_indices = kd_tree.query_ball_point(coord, r=3)
+def find_closest_lane(coord, yaw, kd_tree, kd_idx_2_lane_id_idx, lanes_crosswalks, lane_id_2_idx, max_dist_m=2.5, k_nearest=7):
+    candidate_distances, candidate_indices = kd_tree.query(coord, k=k_nearest)
+
     closed_set = set()
     min_cos_dist = float('inf')
     result_lane_id = None
     for i, candidate_idx in enumerate(candidate_indices):
         lane_id, point_idx = kd_idx_2_lane_id_idx[candidate_idx]
+        if candidate_distances[i] > max_dist_m:
+            break
         if lane_id not in closed_set:
             closed_set.add(lane_id)
             lane_center_line = lanes_crosswalks['lanes']['center_line'][lane_id_2_idx[lane_id]]
-            if point_idx < len(lane_center_line) - 1:
-                x1 = lane_center_line[point_idx + 1][0] - lane_center_line[point_idx][0]
-                y1 = lane_center_line[point_idx + 1][1] - lane_center_line[point_idx][1]
-            else:  # there're always at least 2 points
+            if point_idx > 0:
                 x1 = lane_center_line[point_idx][0] - lane_center_line[point_idx - 1][0]
                 y1 = lane_center_line[point_idx][1] - lane_center_line[point_idx - 1][1]
+            else:  # there're always at least 2 points
+                x1 = lane_center_line[point_idx + 1][0] - lane_center_line[point_idx][0]
+                y1 = lane_center_line[point_idx + 1][1] - lane_center_line[point_idx][1]
             lane_cos_dist = cos_dist(x1, y1, yaw)
-            if lane_cos_dist < min_cos_dist:
+            if lane_cos_dist + 0.005 < min_cos_dist:
                 min_cos_dist = lane_cos_dist
                 result_lane_id = lane_id
+
     return result_lane_id
 
 ################# NAIVE LANE FOLLOWER ##################
