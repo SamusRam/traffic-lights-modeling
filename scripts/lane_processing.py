@@ -261,20 +261,19 @@ def precompute_lane_adjacencies(id_2_idx, proto_API):
     lane_adj_list_right = [[] for _ in range(len(id_2_idx))]
     lane_adj_list_left = [[] for _ in range(len(id_2_idx))]
 
-    for element in tqdm(proto_API, desc='Computing lane adjacency lists'):
-        element_id = MapAPI.id_as_str(element.id)
-        if proto_API.is_lane(element):
-            lanes_ahead = proto_API.get_lanes_ahead(element_id)
-            lane_adj_list_forward[id_2_idx[element_id]].extend(lanes_ahead)
-            for lane_ahead_id in lanes_ahead:
-                lane_adj_list_backward[id_2_idx[lane_ahead_id]].append(element_id)
+    for element_id in tqdm(id_2_idx.keys(), desc='Computing lane adjacency lists'):
+        lanes_ahead = [lane_id for lane_id in proto_API.get_lanes_ahead(element_id) if lane_id in id_2_idx]
+        lane_adj_list_forward[id_2_idx[element_id]].extend(lanes_ahead)
+        for lane_ahead_id in lanes_ahead:
+            lane_adj_list_backward[id_2_idx[lane_ahead_id]].append(element_id)
 
-            lane_left = proto_API.get_lane_to_left(element_id)
-            if lane_left != '':
-                lane_adj_list_left[id_2_idx[element_id]].append(lane_left)
-            lane_right = proto_API.get_lane_to_right(element_id)
-            if lane_right != '':
-                lane_adj_list_right[id_2_idx[element_id]].append(lane_right)
+        lane_left = proto_API.get_lane_to_left(element_id)
+
+        if lane_left != '' and lane_left in id_2_idx:
+            lane_adj_list_left[id_2_idx[element_id]].append(lane_left)
+        lane_right = proto_API.get_lane_to_right(element_id)
+        if lane_right != '' and lane_left in id_2_idx:
+            lane_adj_list_right[id_2_idx[element_id]].append(lane_right)
 
     return lane_adj_list_forward, lane_adj_list_backward, lane_adj_list_right, lane_adj_list_left
 

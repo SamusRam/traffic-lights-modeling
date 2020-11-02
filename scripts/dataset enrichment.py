@@ -1,7 +1,10 @@
-import zarr
 import sys
+
+import zarr
+
 sys.path.insert(0, '../scripts')
 import os
+
 os.environ["L5KIT_DATA_FOLDER"] = "../input/"
 from l5kit.data import LocalDataManager, ChunkedDataset
 from l5kit.data.zarr_dataset import *
@@ -30,11 +33,13 @@ dataset_zarr = ChunkedDataset(dm.require(dataset_path)).open(cached=False)
 agent_indices_set = get_agent_indices_set(dataset_zarr, min_frame_history=min_frame_history,
                                           min_frame_future=min_frame_future, filter_agents_threshold=0.5)
 
+print('len agents', len(agent_indices_set))
+
 if add_standard_mask_indices:
     mask_agent_indices_set = get_agent_indices_set(dataset_zarr, min_frame_history=MIN_FRAME_HISTORY,
-                                          min_frame_future=MIN_FRAME_FUTURE, filter_agents_threshold=0.5)
+                                                   min_frame_future=MIN_FRAME_FUTURE, filter_agents_threshold=0.5)
     num_agents_mask = len(mask_agent_indices_set)
-
+    print('len agents masked', len(mask_agent_indices_set))
 
 num_scenes = len(dataset_zarr.scenes)
 num_frames = len(dataset_zarr.frames)
@@ -42,8 +47,7 @@ num_agents = len(dataset_zarr.agents)
 num_agents_new = len(agent_indices_set)
 num_tl_faces = len(dataset_zarr.tl_faces)
 
-
-new_path = f"{dm.require(dataset_path).split('.zarr')[0]}_filtered_min_frame_history_{min_frame_history}_min_frame_future_{min_frame_future}.zarr"
+new_path = f"{dm.require(dataset_path).split('.zarr')[0]}_filtered_min_frame_history_{min_frame_history}_min_frame_future_{min_frame_future}{'_with_mask_idx' if add_standard_mask_indices else ''}.zarr"
 
 root = zarr.open_group(new_path, mode='w')
 
@@ -55,21 +59,21 @@ if add_standard_mask_indices:
 
     mask_agent_indices = root.require_dataset(
         MASK_AGENT_INDICES_ARRAY_KEY, dtype=MASK_AGENT_INDICES_ARRAY_DTYPE, chunks=MASK_AGENT_INDICES_ARRAY_CHUNK_SIZE,
-        shape=(num_agents_mask,)
+        shape=num_agents_mask
     )
 
 frames = root.require_dataset(
-            FRAME_ARRAY_KEY, dtype=FRAME_DTYPE, chunks=FRAME_CHUNK_SIZE, shape=(num_frames,)
-        )
+    FRAME_ARRAY_KEY, dtype=FRAME_DTYPE, chunks=FRAME_CHUNK_SIZE, shape=(num_frames,)
+)
 agents = root.require_dataset(
-            AGENT_ARRAY_KEY, dtype=AGENT_DTYPE, chunks=AGENT_CHUNK_SIZE, shape=(num_agents_new,)
-        )
+    AGENT_ARRAY_KEY, dtype=AGENT_DTYPE, chunks=AGENT_CHUNK_SIZE, shape=(num_agents_new,)
+)
 scenes = root.require_dataset(
-            SCENE_ARRAY_KEY, dtype=SCENE_DTYPE, chunks=SCENE_CHUNK_SIZE, shape=(num_scenes,)
-        )
+    SCENE_ARRAY_KEY, dtype=SCENE_DTYPE, chunks=SCENE_CHUNK_SIZE, shape=(num_scenes,)
+)
 tl_faces = root.require_dataset(
-            TL_FACE_ARRAY_KEY, dtype=TL_FACE_DTYPE, chunks=TL_FACE_CHUNK_SIZE, shape=(num_tl_faces,)
-        )
+    TL_FACE_ARRAY_KEY, dtype=TL_FACE_DTYPE, chunks=TL_FACE_CHUNK_SIZE, shape=(num_tl_faces,)
+)
 
 # traffic lights
 for tl_i_step in tqdm(range(0, num_tl_faces, TL_FACE_CHUNK_SIZE[0]), desc='Traffic lights..'):
@@ -84,6 +88,7 @@ for i_step in tqdm(range(0, num_scenes, SCENE_CHUNK_SIZE[0]), desc='Scenes..'):
 agent_count = 0
 if add_standard_mask_indices:
     mask_agent_count = 0
+
 for i_step in tqdm(range(0, num_frames, FRAME_CHUNK_SIZE[0]), desc='Frames..'):
     upper_idx = min(i_step + FRAME_CHUNK_SIZE[0], num_frames)
     batch_read = dataset_zarr.frames[i_step: upper_idx]
@@ -93,14 +98,15 @@ for i_step in tqdm(range(0, num_frames, FRAME_CHUNK_SIZE[0]), desc='Frames..'):
             batch_read_[col_name] = batch_read[col_name]
         batch_read = batch_read_
     for frame_i in range(i_step, upper_idx):
-        original_agent_index_interval = batch_read[frame_i - i_step]['agent_index_interval']
+        original_agent_index_interval = batch_read[frame_i - i_step]['agent_index_interval'].copy()
         agent_indices_remained = [agent_index for agent_index in range(*original_agent_index_interval)
                                   if agent_index in agent_indices_set]
-        batch_read[frame_i - i_step]['agent_index_interval'] = np.array([agent_count, agent_count + len(agent_indices_remained)])
+        batch_read[frame_i - i_step]['agent_index_interval'] = np.array(
+            [agent_count, agent_count + len(agent_indices_remained)])
 
         if add_standard_mask_indices:
             mask_agent_indices_remained = [agent_index for agent_index in range(*original_agent_index_interval)
-                                      if agent_index in mask_agent_indices_set]
+                                           if agent_index in mask_agent_indices_set]
             batch_read_[frame_i - i_step]['mask_agent_index_interval'] = np.array(
                 [mask_agent_count, mask_agent_count + len(mask_agent_indices_remained)])
             mask_agent_count += len(mask_agent_indices_remained)
@@ -127,7 +133,9 @@ for i_step in tqdm(range(0, num_agents, AGENT_CHUNK_SIZE[0]), desc='Agents..'):
         if agent_i in agent_indices_set:
             agents_chunk_buffers[agents_chunk_buffer_size] = batch_read[agent_i - i_step]
             if add_standard_mask_indices and agent_i in mask_agent_indices_set:
-                mask_agent_indices_chunk_buffers[mask_agent_indices_chunk_buffer_size] = agents_chunk_buffer_size + agents_chunk_i*AGENT_CHUNK_SIZE[0]
+                mask_agent_indices_chunk_buffers[
+                    mask_agent_indices_chunk_buffer_size] = agents_chunk_buffer_size + agents_chunk_i * \
+                                                            AGENT_CHUNK_SIZE[0]
                 mask_agent_indices_chunk_buffer_size += 1
             agents_chunk_buffer_size += 1
             if agents_chunk_buffer_size == AGENT_CHUNK_SIZE[0]:
@@ -136,7 +144,8 @@ for i_step in tqdm(range(0, num_agents, AGENT_CHUNK_SIZE[0]), desc='Agents..'):
                     agents_chunk_buffers
                 agents_chunk_i += 1
 
-            if add_standard_mask_indices and mask_agent_indices_chunk_buffer_size == MASK_AGENT_INDICES_ARRAY_CHUNK_SIZE[0]:
+            if add_standard_mask_indices and mask_agent_indices_chunk_buffer_size == \
+                    MASK_AGENT_INDICES_ARRAY_CHUNK_SIZE[0]:
                 mask_agent_indices_chunk_buffer_size = 0
                 root.mask_agent_indices[mask_agent_indices_chunk_i * MASK_AGENT_INDICES_ARRAY_CHUNK_SIZE[0]:
                                         (mask_agent_indices_chunk_i + 1) * MASK_AGENT_INDICES_ARRAY_CHUNK_SIZE[0]] = \
@@ -145,4 +154,8 @@ for i_step in tqdm(range(0, num_agents, AGENT_CHUNK_SIZE[0]), desc='Agents..'):
 
 root.agents[agents_chunk_i * AGENT_CHUNK_SIZE[0]:] = agents_chunk_buffers[:agents_chunk_buffer_size]
 if add_standard_mask_indices:
-    root.mask_agent_indices[mask_agent_indices_chunk_i * MASK_AGENT_INDICES_ARRAY_CHUNK_SIZE[0]:] = mask_agent_indices_chunk_buffers[:mask_agent_indices_chunk_buffer_size]
+    root.mask_agent_indices[
+    mask_agent_indices_chunk_i * MASK_AGENT_INDICES_ARRAY_CHUNK_SIZE[0]:] = mask_agent_indices_chunk_buffers[
+                                                                            :mask_agent_indices_chunk_buffer_size]
+
+check_zarr = zarr.open_group(new_path, mode='r')

@@ -3,9 +3,8 @@ from typing import Iterator, Sequence, Union, no_type_check
 
 import numpy as np
 import pymap3d as pm
-
-from l5kit.geometry import transform_points
 from l5kit.data.proto.road_network_pb2 import GeoFrame, GlobalId, MapElement, MapFragment, RoadNetworkSegment
+from l5kit.geometry import transform_points
 
 CACHE_SIZE = int(1e5)
 ENCODING = "utf-8"
@@ -227,6 +226,66 @@ class MapAPI:
         lane = element.element.lane
         return [self.id_as_str(x) for x in lane.lanes_ahead]
 
+    def get_traffic_control_elements_at_junction(self, element_id: str) -> list:
+        """
+
+        Args:
+            element_id (str): junction element id
+
+        Returns:
+            list: a list with element ids of all traffic control elements regulating traffic in the intersection
+        """
+        element = self[element_id]
+        assert self.is_junction(element)
+
+        junction = element.element.junction
+        return [self.id_as_str(x) for x in junction.traffic_control_elements]
+
+    def get_road_network_nodes_at_junction(self, element_id: str) -> list:
+        """
+
+        Args:
+            element_id (str): junction element id
+
+        """
+        element = self[element_id]
+        assert self.is_junction(element)
+
+        junction = element.element.junction
+        return [self.id_as_str(x) for x in junction.road_network_nodes]
+
+    def get_road_segments_at_road_network_node(self, node_element_id: str):
+        element = self[node_element_id]
+        road_network_node = element.element.node
+        return [self.id_as_str(x) for x in road_network_node.road_segments]
+
+    def get_lanes_at_road_segment(self, segment_element_id: str):
+        element = self[segment_element_id]
+        road_segment = element.element.segment
+        return [self.id_as_str(x) for x in road_segment.lanes]
+
+    def get_all_lanes_at_junction(self, junction_element_id: str) -> list:
+        """
+        Args:
+            junction_element_id (str): junction element id
+
+        Returns:
+            list: a list with element ids of all related lanes
+        """
+        element = self[junction_element_id]
+        assert self.is_junction(element)
+
+        junction = element.element.junction
+        direct_lanes = [self.id_as_str(x) for x in junction.lanes]
+        road_network_nodes = self.get_road_network_nodes_at_junction(junction_element_id)
+        all_road_segments = [x
+                             for node in road_network_nodes
+                             for x in self.get_road_segments_at_road_network_node(node)]
+        all_lanes_assigned_to_segments = [x
+                                          for segment_id in all_road_segments
+                                          for x in self.get_lanes_at_road_segment(segment_id)]
+        return direct_lanes + all_lanes_assigned_to_segments
+
     def get_lane_to_left(self, element_id: str) -> str:
         """
         // If any, the lanes a car would get to by executing a lane change maneuver.
@@ -243,7 +302,8 @@ class MapAPI:
         assert self.is_lane(element)
 
         lane = element.element.lane
-        return self.id_as_str(lane.adjacent_lane_change_left) if lane.HasField('adjacent_lane_change_left') and self.id_as_str(lane.adjacent_lane_change_left) != '0' else ''
+        return self.id_as_str(lane.adjacent_lane_change_left) if lane.HasField(
+            'adjacent_lane_change_left') and self.id_as_str(lane.adjacent_lane_change_left) != '0' else ''
 
     def get_lane_to_right(self, element_id: str) -> str:
         """
@@ -261,7 +321,8 @@ class MapAPI:
         assert self.is_lane(element)
 
         lane = element.element.lane
-        return self.id_as_str(lane.adjacent_lane_change_right) if lane.HasField('adjacent_lane_change_right') and self.id_as_str(lane.adjacent_lane_change_right) != '0' else ''
+        return self.id_as_str(lane.adjacent_lane_change_right) if lane.HasField(
+            'adjacent_lane_change_right') and self.id_as_str(lane.adjacent_lane_change_right) != '0' else ''
 
     def get_lanes_to_yield(self, element_id: str) -> list:
         """
@@ -414,15 +475,25 @@ class MapAPI:
             return False
         traffic_el = element.element.traffic_control_element
         if (
-            traffic_el.HasField(f"signal_{colour}_face")
-            or traffic_el.HasField(f"signal_left_arrow_{colour}_face")
-            or traffic_el.HasField(f"signal_right_arrow_{colour}_face")
-            or traffic_el.HasField(f"signal_upper_left_arrow_{colour}_face")
-            or traffic_el.HasField(f"signal_upper_right_arrow_{colour}_face")
-            or traffic_el.HasField(f"signal_{colour}_u_turn")
+                traffic_el.HasField(f"signal_{colour}_face")
+                or traffic_el.HasField(f"signal_left_arrow_{colour}_face")
+                or traffic_el.HasField(f"signal_right_arrow_{colour}_face")
+                or traffic_el.HasField(f"signal_upper_left_arrow_{colour}_face")
+                or traffic_el.HasField(f"signal_upper_right_arrow_{colour}_face")
+                or traffic_el.HasField(f"signal_{colour}_u_turn")
         ):
             return True
         return False
+
+    def get_traffic_face_colour(self, element_id: str):
+        for color in ['green', 'yellow', 'red']:
+            if self.is_traffic_face_colour(element_id, color):
+                return color
+        return 'unknown'
+
+    def is_bike_only_lane(self, element_id):
+        assert self.is_lane(self[element_id])
+        return self[element_id].element.lane.access_restriction.type == 4
 
     def get_traffic_light_face_sets(self, element_id):
         """
@@ -487,7 +558,6 @@ class MapAPI:
             raise ValueError(f"The element {element_id} is not a lane.")
         parent_element_id = element_instance.element.lane.parent_segment_or_junction
         return parent_element_id
-
 
     @no_type_check
     def __getitem__(self, item: Union[int, str, bytes]) -> MapElement:
