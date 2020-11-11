@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import List, Optional, Tuple
 from datetime import datetime
 from pytz import timezone
-
+import gc
 import numpy as np
 import zarr
 from l5kit.data import (
@@ -725,9 +725,9 @@ class AgentDatasetModified(EgoDatasetModified):
         return indices
 
 
-def get_agent_indices_set(dataset, filter_agents_threshold,
-                          min_frame_history: int = MIN_FRAME_HISTORY,
-                          min_frame_future: int = MIN_FRAME_FUTURE, ):
+def get_agent_indices_set(dataset, filter_agents_threshold: float,
+                          min_frame_histories: List,
+                          min_frame_future: int):
     agents_mask_path = Path(dataset.path) / f"agents_mask/{filter_agents_threshold}"
     if not agents_mask_path.exists():  # don't check in root but check for the path
         print(
@@ -745,18 +745,31 @@ def get_agent_indices_set(dataset, filter_agents_threshold,
         )
 
     agents_mask = convenience.load(str(agents_mask_path))  # note (lberg): this doesn't update root
-    past_mask = agents_mask[:, 0] >= min_frame_history
-    future_mask = agents_mask[:, 1] >= min_frame_future
-    agents_mask = past_mask * future_mask
 
-    if min_frame_history != MIN_FRAME_HISTORY:
-        print(f"warning, you're running with custom min_frame_history of {min_frame_history}")
-    if min_frame_future != MIN_FRAME_FUTURE:
-        print(f"warning, you're running with custom min_frame_future of {min_frame_future}")
+    min_frame_history_vals = sorted(min_frame_histories)
+    orig_indices_order = sorted(range(len(min_frame_histories)),
+                                key=lambda i: min_frame_histories[i])
+    results = []
+    result_mask = agents_mask[:, 1] >= min_frame_future
+    past_counts = agents_mask[:, 0]
+    del agents_mask
+    gc.collect()
 
-    agents_indices = np.nonzero(agents_mask)[0]
-    agents_indices_set = set(agents_indices)
-    return agents_indices_set
+    for min_frame_history_val in min_frame_history_vals:
+        result_mask[past_counts < min_frame_history_val] = False
+        if len(results) == 0:
+            agents_indices = np.nonzero(result_mask)[0]
+            results.append(set(agents_indices))
+            del agents_indices
+            gc.collect()
+        else:
+            agents_indices_removed = {idx for idx in results[0]
+                                      if result_mask[idx] == 0}
+            results.append(agents_indices_removed)
+
+    if len(results):
+        results = [results[i] for i in orig_indices_order]
+    return results
 
 
 class FramesDataset(Dataset):

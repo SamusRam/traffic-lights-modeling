@@ -21,6 +21,8 @@ parser.add_argument('--dataset-path')
 parser.add_argument('--min-frame-history', default=MIN_FRAME_HISTORY, type=int)
 parser.add_argument('--min-frame-future', default=MIN_FRAME_FUTURE, type=int)
 parser.add_argument('--add-standard-mask-indices', default=False, action='store_true')
+parser.add_argument('--agent-indices-set-path', default='')
+parser.add_argument('--mask-agent-indices-set-path', default='')
 args = parser.parse_args()
 
 dataset_path = args.dataset_path
@@ -30,16 +32,19 @@ add_standard_mask_indices = args.add_standard_mask_indices
 
 dm = LocalDataManager(None)
 dataset_zarr = ChunkedDataset(dm.require(dataset_path)).open(cached=False)
-agent_indices_set = get_agent_indices_set(dataset_zarr, min_frame_history=min_frame_history,
-                                          min_frame_future=min_frame_future, filter_agents_threshold=0.5)
+print('min_frame_history, min_frame_future', min_frame_history, min_frame_future)
 
-print('len agents', len(agent_indices_set))
 
 if add_standard_mask_indices:
-    mask_agent_indices_set = get_agent_indices_set(dataset_zarr, min_frame_history=MIN_FRAME_HISTORY,
+    agent_indices_set, indices_not_included_into_main_mask = get_agent_indices_set(dataset_zarr, min_frame_histories=[min_frame_history, MIN_FRAME_HISTORY],
                                                    min_frame_future=MIN_FRAME_FUTURE, filter_agents_threshold=0.5)
-    num_agents_mask = len(mask_agent_indices_set)
-    print('len agents masked', len(mask_agent_indices_set))
+    num_agents_mask = len(agent_indices_set) - len(indices_not_included_into_main_mask)
+    print('len agents masked', num_agents_mask)
+else:
+    agent_indices_set = get_agent_indices_set(dataset_zarr, min_frame_histories=[min_frame_history],
+                                              min_frame_future=min_frame_future, filter_agents_threshold=0.5)[0]
+
+print('len agents', len(agent_indices_set))
 
 num_scenes = len(dataset_zarr.scenes)
 num_frames = len(dataset_zarr.frames)
@@ -106,7 +111,7 @@ for i_step in tqdm(range(0, num_frames, FRAME_CHUNK_SIZE[0]), desc='Frames..'):
 
         if add_standard_mask_indices:
             mask_agent_indices_remained = [agent_index for agent_index in range(*original_agent_index_interval)
-                                           if agent_index in mask_agent_indices_set]
+                                           if agent_index in agent_indices_set and agent_index not in indices_not_included_into_main_mask]
             batch_read_[frame_i - i_step]['mask_agent_index_interval'] = np.array(
                 [mask_agent_count, mask_agent_count + len(mask_agent_indices_remained)])
             mask_agent_count += len(mask_agent_indices_remained)
@@ -132,7 +137,7 @@ for i_step in tqdm(range(0, num_agents, AGENT_CHUNK_SIZE[0]), desc='Agents..'):
     for agent_i in range(i_step, upper_idx):
         if agent_i in agent_indices_set:
             agents_chunk_buffers[agents_chunk_buffer_size] = batch_read[agent_i - i_step]
-            if add_standard_mask_indices and agent_i in mask_agent_indices_set:
+            if add_standard_mask_indices and agent_i in agent_indices_set and agent_i not in indices_not_included_into_main_mask:
                 mask_agent_indices_chunk_buffers[
                     mask_agent_indices_chunk_buffer_size] = agents_chunk_buffer_size + agents_chunk_i * \
                                                             AGENT_CHUNK_SIZE[0]
@@ -159,3 +164,6 @@ if add_standard_mask_indices:
                                                                             :mask_agent_indices_chunk_buffer_size]
 
 check_zarr = zarr.open_group(new_path, mode='r')
+
+
+# nohup python dataset\ enrichment.py --add-standard-mask-indices --dataset-path scenes/train_full.zarr --min-frame-history 4 > train_full_enrich.log &
