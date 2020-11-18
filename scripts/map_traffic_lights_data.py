@@ -272,15 +272,18 @@ for map_segment_idx, segment_lanes in enumerate(map_segment_2_lanes):
     segment_lanes_bike_dict, _ = get_lanes_dict_and_id_mapping(filter_function=lambda x: x in segment_lanes and
                                                                                          x in lane_ids_bike_only)
     segment_lanes_dict, _ = get_lanes_dict_and_id_mapping(filter_function=lambda x: x in segment_lanes)
-    map_segment_2_kd_tree_bike[map_segment_idx], map_segment_2_kd_idx_2_lane_id_idx_bike[
-        map_segment_idx] = get_kd_tree_and_idx_map(segment_lanes_bike_dict) if len(
-        segment_lanes_bike_dict['ids']) else None, None
-    map_segment_2_kd_tree_not_bike[map_segment_idx], map_segment_2_kd_idx_2_lane_id_idx_not_bike[
-        map_segment_idx] = get_kd_tree_and_idx_map(segment_lanes_not_bike_dict) if len(
-        segment_lanes_bike_dict['ids']) else None, None
-    map_segment_2_kd_tree[map_segment_idx], map_segment_2_kd_idx_2_lane_id_idx[
-        map_segment_idx] = get_kd_tree_and_idx_map(segment_lanes_dict) if len(
-        segment_lanes_bike_dict['ids']) else None, None
+    if len(segment_lanes_bike_dict['ids']):
+        kd_tree_, idx_map_ = get_kd_tree_and_idx_map(segment_lanes_bike_dict)
+        map_segment_2_kd_tree_bike[map_segment_idx] = kd_tree_
+        map_segment_2_kd_idx_2_lane_id_idx_bike[map_segment_idx] = idx_map_
+    if len(segment_lanes_bike_dict['ids']):
+        kd_tree_, idx_map_ = get_kd_tree_and_idx_map(segment_lanes_not_bike_dict)
+        map_segment_2_kd_tree_not_bike[map_segment_idx] = kd_tree_
+        map_segment_2_kd_idx_2_lane_id_idx_not_bike[map_segment_idx] = idx_map_
+    if len(segment_lanes_bike_dict['ids']):
+        kd_tree_, idx_map_ = get_kd_tree_and_idx_map(segment_lanes_dict)
+        map_segment_2_kd_tree[map_segment_idx] = kd_tree_
+        map_segment_2_kd_idx_2_lane_id_idx[map_segment_idx] = idx_map_
 
 tl_control_2_junctions = defaultdict(list)
 junction_2_tl_controls = defaultdict(list)
@@ -750,14 +753,14 @@ def match_point_2_map_segment(x_coord, y_coord,
                   key=lambda segment_i: len(map_segment_2_lanes[segment_i]))
 
 
-def get_candidate_lane_points(candidate_indices, agent_class, intersections_only):
-    return [get_lane_point_from_kdtree(candidate_idx, agent_class, intersections_only)
+def get_candidate_lane_points(candidate_indices, agent_class, intersections_only, map_segment_idx=None):
+    return [get_lane_point_from_kdtree(candidate_idx, agent_class, intersections_only, map_segment_idx)
             for candidate_idx in candidate_indices]
 
 
 def get_closest_lanes(coord, agent_class, k_nearest,
                       intersections_only=False,
-                      segmented_map=False):
+                      segmented_map=True):
     # TODO: distance_upper_bound kd_tree param and handling empty return
     if agent_class == BIKE_CLASS:
         if intersections_only:
@@ -773,7 +776,7 @@ def get_closest_lanes(coord, agent_class, k_nearest,
                 candidate_distances, candidate_indices = map_segment_2_kd_tree_bike[map_segment_indices[0]].query(coord,
                                                                                                                   k=k_nearest)
                 return candidate_distances, get_candidate_lane_points(candidate_indices, agent_class,
-                                                                      intersections_only)
+                                                                      intersections_only, map_segment_indices[0])
         candidate_distances, candidate_indices = kd_tree_bike.query(coord, k=k_nearest)
         return candidate_distances, get_candidate_lane_points(candidate_indices, agent_class, intersections_only)
     elif agent_class == CAR_CLASS:
@@ -790,7 +793,7 @@ def get_closest_lanes(coord, agent_class, k_nearest,
                 candidate_distances, candidate_indices = map_segment_2_kd_tree_not_bike[map_segment_indices[0]].query(coord,
                                                                                                                   k=k_nearest)
                 return candidate_distances, get_candidate_lane_points(candidate_indices, agent_class,
-                                                                      intersections_only)
+                                                                      intersections_only, map_segment_indices[0])
         candidate_distances, candidate_indices = kd_tree_not_bike.query(coord, k=k_nearest)
         return candidate_distances, get_candidate_lane_points(candidate_indices, agent_class, intersections_only)
     elif agent_class == ALL_WHEELS_CLASS:
@@ -808,7 +811,7 @@ def get_closest_lanes(coord, agent_class, k_nearest,
                     coord,
                     k=k_nearest)
                 return candidate_distances, get_candidate_lane_points(candidate_indices, agent_class,
-                                                                      intersections_only)
+                                                                      intersections_only, map_segment_indices[0])
 
         candidate_distances, candidate_indices = kd_tree.query(coord, k=k_nearest)
         return candidate_distances, get_candidate_lane_points(candidate_indices, agent_class, intersections_only)
@@ -816,18 +819,24 @@ def get_closest_lanes(coord, agent_class, k_nearest,
         raise NotImplementedError('Only bikes and general cars supported')
 
 
-def get_lane_point_from_kdtree(candidate_idx, agent_class, intersections_only=False):
+def get_lane_point_from_kdtree(candidate_idx, agent_class, intersections_only=False, map_segment_idx=None):
     if agent_class == BIKE_CLASS:
         if intersections_only:
             return kd_idx_2_lane_id_idx_bike_intersection[candidate_idx]
+        if map_segment_idx is not None:
+            return map_segment_2_kd_idx_2_lane_id_idx_bike[map_segment_idx][candidate_idx]
         return kd_idx_2_lane_id_idx_bike[candidate_idx]
     elif agent_class == CAR_CLASS:
         if intersections_only:
             return kd_idx_2_lane_id_idx_not_bike_intersection[candidate_idx]
+        if map_segment_idx is not None:
+            return map_segment_2_kd_idx_2_lane_id_idx_not_bike[map_segment_idx][candidate_idx]
         return kd_idx_2_lane_id_idx_not_bike[candidate_idx]
     elif agent_class == ALL_WHEELS_CLASS:
         if intersections_only:
             return kd_idx_2_lane_id_idx_intersection[candidate_idx]
+        if map_segment_idx is not None:
+            return map_segment_2_kd_idx_2_lane_id_idx[map_segment_idx][candidate_idx]
         return kd_idx_2_lane_id_idx[candidate_idx]
 
 
@@ -985,6 +994,9 @@ def get_info_per_related_lanes(frame_sample):
     lane_2_blocked_tl_signals = defaultdict(set)
     agents_with_wheels = [(agent, ALL_WHEELS_CLASS if np.nonzero(agent[-1])[0][0] == CAR_CLASS else BIKE_CLASS) for
                           agent in frame_sample['agents'] if np.nonzero(agent[-1])[0][0] in [CAR_CLASS, BIKE_CLASS]]
+    # print("frame_sample['agents']", frame_sample['agents'])
+    # import sys
+    # sys.exit(1)
     ego_speed = frame_sample['ego_speed']
     if ego_speed is not None:
         agents_with_wheels.append(((ego_centroid, None, ego_yaw, ego_speed, None, None), ALL_WHEELS_CLASS))
@@ -1142,20 +1154,25 @@ def tl_seq_collate_fn(frames_batch, timestamp_min, timestamp_max):
         timestamp = datetime.fromtimestamp(frame['timestamp'] / 10 ** 9).astimezone(timezone('US/Pacific'))
         if timestamp_min < timestamp <= timestamp_max:
             info_related_lanes = get_info_per_related_lanes(frame)
+
             if len(info_related_lanes):
                 master_intersection_idx, timestamp, ego_centroid, ego_yaw, lanes_info, tl_faces_info = info_related_lanes
                 tl_signals_GO, tl_signals_STOP, observed_events = get_tl_signal_current(lanes_info, tl_faces_info)
+                scene_idx = frame['scene_index']
+                frame_idx = frame['state_index']
                 batch_result.append(
-                    (master_intersection_idx, timestamp, ego_centroid, observed_events, tl_signals_GO, tl_signals_STOP))
+                    (scene_idx, frame_idx, master_intersection_idx, timestamp, ego_centroid, observed_events, tl_signals_GO, tl_signals_STOP))
     return np.array(batch_result)
 
 
 def get_tl_events_df(dataloader_frames):
-    master_intersection_idx_list, timestamp_list, ego_centroid_list, observed_events_list, tl_signals_GO_list, tl_signals_STOP_list = [
-        [] for _ in range(6)]
+    scene_idx_list, frame_idx_list, master_intersection_idx_list, timestamp_list, ego_centroid_list, observed_events_list, tl_signals_GO_list, tl_signals_STOP_list = [
+        [] for _ in range(8)]
     for batch in tqdm(dataloader_frames, desc='Tl events...'):
         for record in batch:
-            master_intersection_idx, timestamp, ego_centroid, observed_events, tl_signals_GO, tl_signals_STOP = record
+            scene_idx, frame_idx, master_intersection_idx, timestamp, ego_centroid, observed_events, tl_signals_GO, tl_signals_STOP = record
+            scene_idx_list.append(scene_idx)
+            frame_idx_list.append(frame_idx)
             master_intersection_idx_list.append(master_intersection_idx)
             timestamp_list.append(timestamp)
             ego_centroid_list.append(ego_centroid)
@@ -1163,7 +1180,9 @@ def get_tl_events_df(dataloader_frames):
             tl_signals_GO_list.append(tl_signals_GO)
             tl_signals_STOP_list.append(tl_signals_STOP)
 
-    tl_events_df = pd.DataFrame({'master_intersection_idx': master_intersection_idx_list,
+    tl_events_df = pd.DataFrame({'scene_idx': scene_idx_list,
+                                 'frame_idx': frame_idx_list,
+                                 'master_intersection_idx': master_intersection_idx_list,
                                  'timestamp': timestamp_list,
                                  'ego_centroid': ego_centroid_list,
                                  'observed_events': observed_events_list,
@@ -1376,7 +1395,3 @@ def get_agent_lanes_df(dataloader_frames):
                                  'lane_point_i': lane_point_i_list})
     agent_lanes_df.sort_values(by=['agent_track_id', 'scene_idx', 'timestamp'], inplace=True)
     return agent_lanes_df
-
-
-
-
