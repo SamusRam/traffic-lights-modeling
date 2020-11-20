@@ -14,4 +14,4 @@ output_name = args.output_name
 
 input_paths = [f'../input/{name}' for name in dataset_names]
 tl_events_df_concat = pd.concat([pd.read_hdf(path, key='data') for path in input_paths])
-tl_events_df_concat.to_hdf(os.path.join('../input', f'{output_name}.hdf5'), key='data')
+tl_events_df_concat.to_hdf(os.path.join('../input', output_name), key='data')

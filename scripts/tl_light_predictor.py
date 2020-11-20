@@ -63,7 +63,8 @@ def compute_last_valid_idx_for_seq(tl_events_df):
                tl_events_df['continuous_time'].iloc[last_valid_idx]):
             last_valid_idx -= 1
         tl_events_df['valid_hist_len'].iloc[row_i] = row_i - last_valid_idx
-        
+
+
 if 'valid_hist_len' not in tl_events_df_trn.columns:
     compute_last_valid_idx_for_seq(tl_events_df_trn)
     if len(TRAIN_INPUT_PATHS) == 1:

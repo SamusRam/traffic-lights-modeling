@@ -8,7 +8,6 @@ parser.add_argument('--joint-hdf-file')
 args = parser.parse_args()
 
 input_name = args.joint_hdf_file
-
 tl_events_df_joint = pd.read_hdf(os.path.join('../input', input_name), key='data')
 for intersection_idx in tqdm(tl_events_df_joint['master_intersection_idx'].unique()):
     tl_events_df_intersection = tl_events_df_joint[tl_events_df_joint['master_intersection_idx'] == intersection_idx]

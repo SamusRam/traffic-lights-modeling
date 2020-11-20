@@ -640,45 +640,83 @@ for tl_faces, intersection_idx_set in tl_faces_set_2_master_intersections.items(
     tl_faces_set_2_master_intersections[tl_faces] = list(intersection_idx_set)[0]
 # tl_signal_idx corresponds to the set of tl faces with the same set of lanes under control and therefore (presumably) the same signal
 
-controlled_lane_id_2_tl_signal_idx = dict()
-exit_lane_id_2_tl_signal_idx = dict()
-tl_signal_idx_2_controlled_lanes = []
-tl_signal_idx_2_exit_lanes = []
-tl_signal_idx_2_stop_coordinates = []
-master_intersection_idx_2_tl_signal_indices = defaultdict(list)
-tl_face_id_2_tl_signal_indices = defaultdict(set)
 
-min_required_len_after_stop_line = 7
+master_intersection_idx_2_tl_signal_indices_path = '../input/master_intersection_idx_2_tl_signal_indices.pkl'
+tl_face_id_2_tl_signal_indices_path = '../input/tl_face_id_2_tl_signal_indices.pkl'
+tl_signal_idx_2_controlled_lanes_path = '../input/tl_signal_idx_2_controlled_lanes.pkl'
+tl_signal_idx_2_exit_lanes_path = '../input/tl_signal_idx_2_exit_lanes.pkl'
+tl_signal_idx_2_stop_coordinates_path = '../input/tl_signal_idx_2_stop_coordinates.pkl'
+controlled_lane_id_2_tl_signal_idx_path = '../input/controlled_lane_id_2_tl_signal_idx.pkl'
+exit_lane_id_2_tl_signal_idx_path = '../input/exit_lane_id_2_tl_signal_idx.pkl'
+if os.path.exists(master_intersection_idx_2_tl_signal_indices_path):
+    with open(master_intersection_idx_2_tl_signal_indices_path, 'rb') as f:
+        master_intersection_idx_2_tl_signal_indices = pickle.load(f)
+    with open(tl_face_id_2_tl_signal_indices_path, 'rb') as f:
+        tl_face_id_2_tl_signal_indices = pickle.load(f)
+    with open(tl_signal_idx_2_controlled_lanes_path, 'rb') as f:
+        tl_signal_idx_2_controlled_lanes = pickle.load(f)
+    with open(tl_signal_idx_2_exit_lanes_path, 'rb') as f:
+        tl_signal_idx_2_exit_lanes = pickle.load(f)
+    with open(tl_signal_idx_2_stop_coordinates_path, 'rb') as f:
+        tl_signal_idx_2_stop_coordinates = pickle.load(f)
+    with open(controlled_lane_id_2_tl_signal_idx_path, 'rb') as f:
+        controlled_lane_id_2_tl_signal_idx = pickle.load(f)
+    with open(exit_lane_id_2_tl_signal_idx_path, 'rb') as f:
+        exit_lane_id_2_tl_signal_idx = pickle.load(f)
+else:
+    master_intersection_idx_2_tl_signal_indices = defaultdict(list)
+    tl_face_id_2_tl_signal_indices = defaultdict(set)
+    tl_signal_idx_2_controlled_lanes = []
+    tl_signal_idx_2_exit_lanes = []
+    tl_signal_idx_2_stop_coordinates = []
+    controlled_lane_id_2_tl_signal_idx = dict()
+    exit_lane_id_2_tl_signal_idx = dict()
 
-for tl_face_ids, controlled_lanes in sorted(tl_faces_set_2_lanes.items(), key=lambda x: x[0]):
-    tl_signal_idx = len(tl_signal_idx_2_controlled_lanes)
-    for lane_id in controlled_lanes:
-        controlled_lane_id_2_tl_signal_idx[lane_id] = tl_signal_idx
-    tl_signal_idx_2_controlled_lanes.append(set(controlled_lanes))
-    master_intersection_idx_2_tl_signal_indices[tl_faces_set_2_master_intersections[tl_face_ids]].append(tl_signal_idx)
-    stop_coordinates = []
-    tl_signal_idx_2_exit_lanes.append(set())
-    for lane_id in controlled_lanes:
+    min_required_len_after_stop_line = 7
 
-        if is_the_end_controlled_lane(lane_id, controlled_lanes):
-            stop_coordinates.append(get_lane_center_line(lane_id)[-1])
+    for tl_face_ids, controlled_lanes in sorted(tl_faces_set_2_lanes.items(), key=lambda x: x[0]):
+        tl_signal_idx = len(tl_signal_idx_2_controlled_lanes)
+        for lane_id in controlled_lanes:
+            controlled_lane_id_2_tl_signal_idx[lane_id] = tl_signal_idx
+        tl_signal_idx_2_controlled_lanes.append(set(controlled_lanes))
+        master_intersection_idx_2_tl_signal_indices[tl_faces_set_2_master_intersections[tl_face_ids]].append(tl_signal_idx)
+        stop_coordinates = []
+        tl_signal_idx_2_exit_lanes.append(set())
+        for lane_id in controlled_lanes:
 
-            dist_from_stop_line = 0
-            queue = deque()
-            queue.append((lane_id, dist_from_stop_line))
-            while len(queue):
-                next_lane, dist_from_stop_line = queue.popleft()
-                if dist_from_stop_line != 0:  # not the end lane
-                    tl_signal_idx_2_exit_lanes[tl_signal_idx].add(next_lane)
-                    exit_lane_id_2_tl_signal_idx[next_lane] = tl_signal_idx
-                if dist_from_stop_line < min_required_len_after_stop_line:
-                    lanes_next = get_lane_successors(next_lane)
-                    for lane_next_id in lanes_next:
-                        queue.append((lane_next_id, dist_from_stop_line + get_lane_len(lane_next_id)))
+            if is_the_end_controlled_lane(lane_id, controlled_lanes):
+                stop_coordinates.append(get_lane_center_line(lane_id)[-1])
 
-    tl_signal_idx_2_stop_coordinates.append(stop_coordinates)
-    for tl_face_id in tl_face_ids:
-        tl_face_id_2_tl_signal_indices[tl_face_id].add(tl_signal_idx)
+                dist_from_stop_line = 0
+                queue = deque()
+                queue.append((lane_id, dist_from_stop_line))
+                while len(queue):
+                    next_lane, dist_from_stop_line = queue.popleft()
+                    if dist_from_stop_line != 0:  # not the end lane
+                        tl_signal_idx_2_exit_lanes[tl_signal_idx].add(next_lane)
+                        exit_lane_id_2_tl_signal_idx[next_lane] = tl_signal_idx
+                    if dist_from_stop_line < min_required_len_after_stop_line:
+                        lanes_next = get_lane_successors(next_lane)
+                        for lane_next_id in lanes_next:
+                            queue.append((lane_next_id, dist_from_stop_line + get_lane_len(lane_next_id)))
+
+        tl_signal_idx_2_stop_coordinates.append(stop_coordinates)
+        for tl_face_id in tl_face_ids:
+            tl_face_id_2_tl_signal_indices[tl_face_id].add(tl_signal_idx)
+    with open(master_intersection_idx_2_tl_signal_indices_path, 'wb') as f:
+        pickle.dump(master_intersection_idx_2_tl_signal_indices, f)
+    with open(tl_face_id_2_tl_signal_indices_path, 'wb') as f:
+        pickle.dump(tl_face_id_2_tl_signal_indices, f)
+    with open(tl_signal_idx_2_controlled_lanes_path, 'wb') as f:
+        pickle.dump(tl_signal_idx_2_controlled_lanes, f)
+    with open(tl_signal_idx_2_exit_lanes_path, 'wb') as f:
+        pickle.dump(tl_signal_idx_2_exit_lanes, f)
+    with open(tl_signal_idx_2_stop_coordinates_path, 'wb') as f:
+        pickle.dump(tl_signal_idx_2_stop_coordinates, f)
+    with open(controlled_lane_id_2_tl_signal_idx_path, 'wb') as f:
+        pickle.dump(controlled_lane_id_2_tl_signal_idx, f)
+    with open(exit_lane_id_2_tl_signal_idx_path, 'wb') as f:
+        pickle.dump(exit_lane_id_2_tl_signal_idx, f)
 
 lane_2_master_intersection_related_lanes = dict()  # ->set
 lane_id_2_master_intersection_idx = dict()
