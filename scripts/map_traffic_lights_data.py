@@ -13,6 +13,7 @@ from datetime import datetime
 from l5kit.data.filter import filter_tl_faces_by_status
 import pandas as pd
 from tqdm.auto import tqdm
+from glob import glob
 
 from collections import defaultdict, deque
 import bisect
@@ -1377,8 +1378,51 @@ def get_next_car_dist_speed(agent_centroid, agent_speed, agent_yaw,
 semantic_map_path = dm.require(semantic_map_key)
 proto_API = MapAPI(semantic_map_path, world_to_ecef)
 
+######################
+# getting yield sets
+lane_id_2_yield_lanes = defaultdict(set)
+min_yield_points = 10
 
-def get_agent_lanes_info(frame_sample, min_lane_points_forward=30):
+lane_id_2_yield_lanes_init = dict()
+for lane_id in lane_id_2_idx:
+    lane_ids_to_yield = proto_API.get_lanes_to_yield(lane_id)
+    if len(lane_ids_to_yield):
+        lane_id_2_yield_lanes_init[lane_id] = lane_ids_to_yield
+lane_id_2_yield_lanes_init.update(red_turn_lane_2_yield_lanes)
+
+for lane_id, lane_ids_to_yield in lane_id_2_yield_lanes_init.items():
+    if lane_id in exit_lane_id_2_tl_signal_idx:  # focusing on the most common case of traffic lights being on; 95.7% of lanes with lanes to yield are not tl exit lanes
+        continue
+    for lane_id_to_yield in lane_ids_to_yield:
+        queue = deque()
+        queue.append((lane_id_to_yield, get_lane_len(lane_id_to_yield)))
+        while len(queue):
+            lane_id_to_yield_, yield_points_current = queue.popleft()
+            lane_id_2_yield_lanes[lane_id].add(lane_id_to_yield_)
+            for prev_lane in get_lane_predecessors(lane_id_to_yield_):
+                prev_lane_len = get_lane_len(prev_lane)
+                if yield_points_current < min_yield_points:
+                    queue.append((prev_lane, yield_points_current + prev_lane_len))
+
+##########################
+# traffic light signals
+tl_signal_idx_2_master_intersection_idx = dict()
+for intersection_i, tl_signal_indices in master_intersection_idx_2_tl_signal_indices.items():
+    for tl_signal_i in tl_signal_indices:
+        tl_signal_idx_2_master_intersection_idx[tl_signal_i] = intersection_i
+
+def get_traffic_light_predictions_per_intersection(tl_predictions_base_name)
+    tl_prediction_paths = glob(f'../outputs/tl_predictions/{tl_predictions_base_name}*')
+    N_INTERSECTIONS = 10
+    intersection_2_predictions = defaultdict(list)
+    for intersection_i in range(N_INTERSECTIONS):
+        intersection_paths = [x for x in tl_prediction_paths if f'intersection_{intersection_i}' in x]
+        for intersection_path in intersection_paths:
+            intersection_2_predictions[intersection_i].append(
+                pd.read_hdf(intersection_path).set_index(['scene_idx', 'scene_frame_idx']))
+    return intersection_2_predictions
+
+def get_agent_lanes_info(frame_sample, intersection_2_predictions, min_lane_points_forward=30):
     timestamp = datetime.fromtimestamp(frame_sample['timestamp'] / 10 ** 9).astimezone(timezone('US/Pacific'))
     scene_idx = frame_sample['scene_index']
     track_speed_yaw_lane_point_list = []
@@ -1408,9 +1452,32 @@ def get_agent_lanes_info(frame_sample, min_lane_points_forward=30):
         if find_closest_result is not None:
             lane_id, lane_point_i = find_closest_result
             lane_2_cars[lane_id].append((lane_point_i, agent_centroid, agent_speed, agent_yaw))
+
+            # adding traffic light predictions
+            if lane_id in controlled_lane_id_2_tl_signal_idx:
+                # scene_idx	scene_frame_idx	10_green_prob	10_tte_mode	10_tte_25th_perc	10_tte_75th_perc
+                tl_signal_idx = controlled_lane_id_2_tl_signal_idx[lane_id]
+                intersections_i = tl_signal_idx_2_master_intersection_idx[tl_signal_idx]
+                green_prob_list, tl_tte_mode_list_list, tl_tte_25th_perc_list, tl_tte_75th_perc_list = [], [], [], []
+                state_idx = frame_sample['state_index']
+                for intersection_pred_df in intersection_2_predictions[intersections_i]:
+                    if (scene_idx, state_idx) in intersection_pred_df.index:
+                        tl_events_pred_current = intersection_pred_df.loc[[(scene_idx, state_idx)]]
+                        green_prob_list.append(tl_events_pred_current[f'{tl_signal_idx}_green_prob'].values[0])
+                        tl_tte_mode_list_list.append(tl_events_pred_current[f'{tl_signal_idx}_tte_mode'].values[0])
+                        tl_tte_25th_perc_list.append(tl_events_pred_current[f'{tl_signal_idx}_tte_25th_perc'].values[0])
+                        tl_tte_75th_perc_list.append(tl_events_pred_current[f'{tl_signal_idx}_tte_75th_perc'].values[0])
+                green_prob, tl_tte_mode, tl_tte_25th_perc, tl_tte_75th_perc = [np.nanmean(x) for x in [green_prob_list,
+                                                                                                       tl_tte_mode_list_list,
+                                                                                                       tl_tte_25th_perc_list,
+                                                                                                       tl_tte_75th_perc_list]]
+
+            else:
+                green_prob, tl_tte_mode, tl_tte_25th_perc, tl_tte_75th_perc = 1.1, 6, 6, 6
             track_speed_yaw_lane_point_list.append([agent_centroid, agent_track_id, scene_idx, timestamp,
                                                     map_segment_group, agent_speed, agent_yaw, lane_id,
-                                                    lane_point_i, proto_API.get_speed_limit(lane_id) - agent_speed])
+                                                    lane_point_i, proto_API.get_speed_limit(lane_id) - agent_speed,
+                                                    green_prob, tl_tte_mode, tl_tte_25th_perc, tl_tte_75th_perc])
 
         for lane_id, vals in lane_2_cars.items():
             lane_2_cars[lane_id] = sorted(vals, key=lambda x: x[0])
@@ -1419,11 +1486,16 @@ def get_agent_lanes_info(frame_sample, min_lane_points_forward=30):
             for list_i, (lane_point_i, _, _, _) in enumerate(car_entries):
                 lane_point_2_lane_list_i[(lane_id, lane_point_i)] = list_i
 
+        encountered_lanes = set(lane_2_cars.keys())
+
         for lane_info_entry in track_speed_yaw_lane_point_list:
             (agent_centroid, _, _, _,
              _, agent_speed, agent_yaw, lane_id,
-             lane_point_i, _) = lane_info_entry
+             lane_point_i, _, _, _, _, _) = lane_info_entry
             track_speed_yaw_lane_point_list_final.append(lane_info_entry.copy())
+
+            ################################
+            # next car estimation
             # first, checking car in front on the same lane
             lane_list_i = lane_point_2_lane_list_i[(lane_id, lane_point_i)]
             if lane_list_i < len(lane_2_cars[lane_id]) - 1:
@@ -1457,10 +1529,28 @@ def get_agent_lanes_info(frame_sample, min_lane_points_forward=30):
                                 queue.append(
                                     (next_lane_len, lane_points_dist_up_now + next_lane_len < min_lane_points_forward))
 
-            if len(track_speed_yaw_lane_point_list_final[-1]) == 10:
+            if len(track_speed_yaw_lane_point_list_final[-1]) == 14:
                 track_speed_yaw_lane_point_list_final[-1].extend(
                     (min_lane_points_forward, min_lane_points_forward * 20, -10))
 
+            #################################
+            # yield lines estimation
+            encountered_lanes_to_yield = encountered_lanes.intersection(lane_id_2_yield_lanes[lane_id])
+            if len(encountered_lanes_to_yield):
+                closest_dist = float('inf')
+                speed_of_closest = -1
+                for lane_to_yield in encountered_lanes_to_yield:
+                    for _, next_agent_centroid, next_agent_speed, _ in lane_2_cars[lane_to_yield]:
+                        dist_next = np.hypot(next_agent_centroid[0] - agent_centroid[0],
+                                             next_agent_centroid[1] - agent_centroid[1])
+                        if dist_next < closest_dist:
+                            closest_dist = dist_next
+                            speed_of_closest = next_agent_speed
+                track_speed_yaw_lane_point_list_final[-1].extend((closest_dist, speed_of_closest))
+            else:
+                track_speed_yaw_lane_point_list_final[-1].extend((80, -1))
+
+    # TODO: too long tuple, consider dataclass
     return track_speed_yaw_lane_point_list_final
 
 

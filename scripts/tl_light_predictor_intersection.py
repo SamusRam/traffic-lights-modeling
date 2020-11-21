@@ -31,6 +31,8 @@ parser.add_argument('--num-workers', default=8, type=int)
 parser.add_argument('--predict', action='store_true')
 parser.add_argument('--epoch-max', default=5, type=int)
 parser.add_argument('--different-gpu', action='store_true')
+parser.add_argument('--prediction-id', default='')
+
 args = parser.parse_args()
 
 trn_dataset_names = args.trn_dataset_names[0]
@@ -43,6 +45,7 @@ val_file_name = args.val_file_name
 perform_prediction = args.predict
 epoch_max = args.epoch_max
 different_gpu = args.different_gpu
+prediction_id = args.prediction_id
 
 lr=6e-5
 embedding_dim=64
@@ -588,7 +591,7 @@ def predict(dataloader, intersection_model, device,
                             f'{tl_id}_tte_75th_perc': tl_idx_2_75perc_list[tl_id]
                             })
 
-    pd.DataFrame(values_dict).to_hdf(f'../outputs/tl_predictions/tl_pred_{fold_i}_intersection_{intersection_idx}.hdf5', key='data')
+    pd.DataFrame(values_dict).to_hdf(f'../outputs/tl_predictions/tl_pred{"_" + prediction_id if prediction_id != "" else ""}_{fold_i}_intersection_{intersection_idx}.hdf5', key='data')
 
 
 dataloader_trn = get_dataloader(tl_events_df_trn, intersection_idx, return_indices=perform_prediction, is_inference=perform_prediction)
