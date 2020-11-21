@@ -341,7 +341,7 @@ class MapAPI:
         assert self.is_lane(element)
 
         lane = element.element.lane
-        return list(lane.yield_to_lanes)
+        return [self.id_as_str(el) for el in lane.yield_to_lanes]
 
     def get_lane_traffic_controls(self, element_id: str) -> list:
         """
@@ -517,6 +517,36 @@ class MapAPI:
                 if traffic_el.HasField(face_set_name):
                     results.append((getattr(traffic_el, face_set_name), face_set_name))
         return results
+
+    def has_lane_stop_sign(self, lane_id):
+        """
+
+        Args:
+            element_id (str): the id (utf-8 encode) of the lane
+        Returns:
+        """
+        lane_element = self[lane_id].element.lane
+        traffic_controls = list(lane_element.traffic_controls)
+        for traffic_control in traffic_controls:
+            traffic_control_el_id = self.id_as_str(traffic_control)
+            traffic_control_element = self[traffic_control_el_id].element.traffic_control_element
+            if traffic_control_element.HasField('stop_sign'):
+                return True
+        return False
+
+    def get_speed_limit(self, lane_id, max_lim=18):
+        if lane_id not in self:
+            return max_lim
+        lane_element = self[lane_id].element.lane
+        parent = lane_element.parent_segment_or_junction
+        parent_id = self.id_as_str(parent)
+        parent_element = self[parent_id].element
+        if parent_element.HasField('segment'):
+            speed_limit = parent_element.segment.speed_limit_meters_per_second
+            if speed_limit != 0:
+                return speed_limit
+        return max_lim
+
 
     def get_rules_for_traffic_light_face_set(self, traffic_light_face_set):
         """
