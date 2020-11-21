@@ -534,6 +534,19 @@ class MapAPI:
                 return True
         return False
 
+    def get_speed_limit(self, lane_id, max_lim=18):
+        if lane_id not in self:
+            return max_lim
+        lane_element = self[lane_id].element.lane
+        parent = lane_element.parent_segment_or_junction
+        parent_id = self.id_as_str(parent)
+        parent_element = self[parent_id].element
+        if parent_element.HasField('segment'):
+            speed_limit = parent_element.segment.speed_limit_meters_per_second
+            if speed_limit != 0:
+                return speed_limit
+        return max_lim
+
 
     def get_rules_for_traffic_light_face_set(self, traffic_light_face_set):
         """

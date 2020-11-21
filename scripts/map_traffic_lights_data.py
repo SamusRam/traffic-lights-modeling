@@ -1356,14 +1356,40 @@ def compute_rnn_inputs(tl_events_df):
         tl_events_df.loc[row_idx]['rnn_inputs_raw'].extend(tl_inputs + lane_inputs)
 
 
-def get_agent_lanes_info(frame_sample, add_centroid=False):
+def get_cos_between_yaws(yaw_rad_1, yaw_rad_2):
+    x1 = np.cos(yaw_rad_1)
+    y1 = np.sin(yaw_rad_1)
+    x2 = np.cos(yaw_rad_2)
+    y2 = np.sin(yaw_rad_2)
+    vector_product = x1 * x2 + y1 * y2
+    cos = vector_product / (np.hypot(x1, y1) * np.hypot(x2, y2))
+    return cos
+
+
+def get_next_car_dist_speed(agent_centroid, agent_speed, agent_yaw,
+                            next_agent_centroid, next_agent_speed, next_agent_yaw):
+    dist = np.hypot(agent_centroid[0] - next_agent_centroid[0], agent_centroid[1] - next_agent_centroid[1])
+    cos_between_yaws = get_cos_between_yaws(agent_yaw, next_agent_yaw)
+    closing_speed = agent_speed - cos_between_yaws * next_agent_speed
+    return dist, closing_speed
+
+
+semantic_map_path = dm.require(semantic_map_key)
+proto_API = MapAPI(semantic_map_path, world_to_ecef)
+
+
+def get_agent_lanes_info(frame_sample, min_lane_points_forward=30):
     timestamp = datetime.fromtimestamp(frame_sample['timestamp'] / 10 ** 9).astimezone(timezone('US/Pacific'))
     scene_idx = frame_sample['scene_index']
     track_speed_yaw_lane_point_list = []
+    track_speed_yaw_lane_point_list_final = []
     agents_with_wheels = [(agent, ALL_WHEELS_CLASS) for
                           agent in frame_sample['agents'] if np.nonzero(agent[-1])[0][0] in [CAR_CLASS, BIKE_CLASS]]
     # agents_with_wheels = [(agent, ALL_WHEELS_CLASS if np.nonzero(agent[-1])[0][0] == CAR_CLASS else BIKE_CLASS) for
     #                       agent in frame_sample['agents'] if np.nonzero(agent[-1])[0][0] in [CAR_CLASS, BIKE_CLASS]]
+
+    # lane_id -> List[(point_i, centroid, speed, yaw)]
+    lane_2_cars = defaultdict(list)
     for agent, agent_class in agents_with_wheels:
         agent_track_id = agent[-2]
         agent_speed = np.hypot(*agent[-3])
@@ -1381,19 +1407,64 @@ def get_agent_lanes_info(frame_sample, add_centroid=False):
             map_segment_group = NUM_MAP_SEGMENTS
         if find_closest_result is not None:
             lane_id, lane_point_i = find_closest_result
-            if add_centroid:
-                track_speed_yaw_lane_point_list.append((agent_centroid, agent_track_id, scene_idx, timestamp,
-                                                        map_segment_group, agent_speed, agent_yaw, lane_id,
-                                                        lane_point_i))
+            lane_2_cars[lane_id].append((lane_point_i, agent_centroid, agent_speed, agent_yaw))
+            track_speed_yaw_lane_point_list.append([agent_centroid, agent_track_id, scene_idx, timestamp,
+                                                    map_segment_group, agent_speed, agent_yaw, lane_id,
+                                                    lane_point_i, proto_API.get_speed_limit(lane_id) - agent_speed])
+
+        for lane_id, vals in lane_2_cars.items():
+            lane_2_cars[lane_id] = sorted(vals, key=lambda x: x[0])
+        lane_point_2_lane_list_i = dict()
+        for lane_id, car_entries in lane_2_cars.items():
+            for list_i, (lane_point_i, _, _, _) in enumerate(car_entries):
+                lane_point_2_lane_list_i[(lane_id, lane_point_i)] = list_i
+
+        for lane_info_entry in track_speed_yaw_lane_point_list:
+            (agent_centroid, _, _, _,
+             _, agent_speed, agent_yaw, lane_id,
+             lane_point_i, _) = lane_info_entry
+            track_speed_yaw_lane_point_list_final.append(lane_info_entry.copy())
+            # first, checking car in front on the same lane
+            lane_list_i = lane_point_2_lane_list_i[(lane_id, lane_point_i)]
+            if lane_list_i < len(lane_2_cars[lane_id]) - 1:
+                next_car_lane_point_i, next_agent_centroid, next_agent_speed, next_agent_yaw = lane_2_cars[lane_id][
+                    lane_list_i + 1]
+                dist, closing_speed = get_next_car_dist_speed(agent_centroid, agent_speed, agent_yaw,
+                                                              next_agent_centroid, next_agent_speed, next_agent_yaw)
+                lane_points_dist = next_car_lane_point_i - lane_point_i
+                track_speed_yaw_lane_point_list_final[-1].extend((lane_points_dist, dist, closing_speed))
             else:
-                agent_centroid_shift = agent_centroid - get_lane_point_coordinates(lane_id, lane_point_i)
-                track_speed_yaw_lane_point_list.append((agent_centroid_shift, agent_track_id, scene_idx, timestamp,
-                                                        map_segment_group, agent_speed, agent_yaw, lane_id,
-                                                        lane_point_i))
+                lane_points_dist_start = get_lane_len(lane_id) - lane_point_i
+                queue = deque()
+                queue.append((lane_id, lane_points_dist_start))
+                next_car_found = False
+                while len(queue) and not next_car_found:
+                    last_checked_lane, lane_points_dist_up_now = queue.popleft()
+                    for next_lane in get_lane_successors(last_checked_lane):
+                        if next_lane in lane_2_cars:
+                            next_car_lane_point_i, next_agent_centroid, next_agent_speed, next_agent_yaw = \
+                            lane_2_cars[next_lane][0]
+                            lane_points_dist = lane_points_dist_up_now + next_car_lane_point_i
+                            dist, closing_speed = get_next_car_dist_speed(agent_centroid, agent_speed, agent_yaw,
+                                                                          next_agent_centroid, next_agent_speed,
+                                                                          next_agent_yaw)
+                            track_speed_yaw_lane_point_list_final[-1].extend((lane_points_dist, dist, closing_speed))
+                            next_car_found = True
+                            break  # limiting myself to one next car (not aggregating over all cars forward)
+                        else:
+                            next_lane_len = get_lane_len(next_lane)
+                            if lane_points_dist_up_now + next_lane_len < min_lane_points_forward:
+                                queue.append(
+                                    (next_lane_len, lane_points_dist_up_now + next_lane_len < min_lane_points_forward))
 
-    return track_speed_yaw_lane_point_list
+            if len(track_speed_yaw_lane_point_list_final[-1]) == 10:
+                track_speed_yaw_lane_point_list_final[-1].extend(
+                    (min_lane_points_forward, min_lane_points_forward * 20, -10))
+
+    return track_speed_yaw_lane_point_list_final
 
 
+# TODO: adapt to changes in get_agent_lane_info
 def agent_lanes_collate_fn(frames_batch,
                            timestamp_min=datetime(1970, 11, 20).astimezone(timezone('US/Pacific')),
                            timestamp_max=datetime(2021, 11, 20).astimezone(timezone('US/Pacific'))):
@@ -1407,12 +1478,12 @@ def agent_lanes_collate_fn(frames_batch,
 
 
 def get_agent_lanes_df(dataloader_frames):
-    agent_centroid_shift_list, agent_track_id_list, scene_idx_list, timestamp_list, map_segment_group_list, agent_speed_list, agent_yaw_list, lane_id_list, lane_point_i_list = [
+    agent_centroid_list, agent_track_id_list, scene_idx_list, timestamp_list, map_segment_group_list, agent_speed_list, agent_yaw_list, lane_id_list, lane_point_i_list = [
         [] for _ in range(9)]
     for batch in tqdm(dataloader_frames, desc='Agents info events...'):
         for record in batch:
-            agent_centroid_shift, agent_track_id, scene_idx, timestamp, map_segment_group, agent_speed, agent_yaw, lane_id, lane_point_i = record
-            agent_centroid_shift_list.append(agent_centroid_shift)
+            agent_centroid, agent_track_id, scene_idx, timestamp, map_segment_group, agent_speed, agent_yaw, lane_id, lane_point_i = record
+            agent_centroid_list.append(agent_centroid)
             agent_track_id_list.append(agent_track_id)
             scene_idx_list.append(scene_idx)
             timestamp_list.append(timestamp)
@@ -1426,7 +1497,7 @@ def get_agent_lanes_df(dataloader_frames):
                                    'scene_idx': scene_idx_list,
                                  'timestamp': timestamp_list,
                                    'map_segment_group': map_segment_group_list,
-                                   'agent_centroid_shift': agent_centroid_shift_list,
+                                   'agent_centroid': agent_centroid_list,
                                  'agent_speed': agent_speed_list,
                                  'agent_yaw': agent_yaw_list,
                                  'lane_id': lane_id_list,
