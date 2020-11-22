@@ -1429,7 +1429,7 @@ lane_id_2_speed_limit = {lane_id: proto_API.get_speed_limit(lane_id) for lane_id
 
 
 def get_agent_lanes_info(frame_sample, intersection_2_predictions, min_lane_points_forward=10, max_speed_limit=18):
-    timestamp = datetime.fromtimestamp(frame_sample['timestamp'] / 10 ** 9).astimezone(timezone('US/Pacific'))
+    timestamp = frame_sample['timestamp'] #datetime.fromtimestamp(frame_sample['timestamp'] / 10 ** 9).astimezone(timezone('US/Pacific'))
     scene_idx = frame_sample['scene_index']
     track_speed_yaw_lane_point_list = []
     track_speed_yaw_lane_point_list_final = []
@@ -1437,7 +1437,6 @@ def get_agent_lanes_info(frame_sample, intersection_2_predictions, min_lane_poin
                           agent in frame_sample['agents'] if np.nonzero(agent[-1])[0][0] in [CAR_CLASS, BIKE_CLASS]]
     # agents_with_wheels = [(agent, ALL_WHEELS_CLASS if np.nonzero(agent[-1])[0][0] == CAR_CLASS else BIKE_CLASS) for
     #                       agent in frame_sample['agents'] if np.nonzero(agent[-1])[0][0] in [CAR_CLASS, BIKE_CLASS]]
-
     # lane_id -> List[(point_i, centroid, speed, yaw)]
     lane_2_cars = defaultdict(list)
     for agent, agent_class in agents_with_wheels:
@@ -1486,79 +1485,80 @@ def get_agent_lanes_info(frame_sample, intersection_2_predictions, min_lane_poin
                                                     lane_id_2_speed_limit.get(lane_id, max_speed_limit) - agent_speed,
                                                     green_prob, tl_tte_mode, tl_tte_25th_perc, tl_tte_75th_perc])
 
-        for lane_id, vals in lane_2_cars.items():
-            lane_2_cars[lane_id] = sorted(vals, key=lambda x: x[0])
-        lane_point_2_lane_list_i = dict()
-        for lane_id, car_entries in lane_2_cars.items():
-            for list_i, (lane_point_i, _, _, _) in enumerate(car_entries):
-                lane_point_2_lane_list_i[(lane_id, lane_point_i)] = list_i
+    for lane_id, vals in lane_2_cars.items():
+        lane_2_cars[lane_id] = sorted(vals, key=lambda x: x[0])
+    lane_point_2_lane_list_i = dict()
+    for lane_id, car_entries in lane_2_cars.items():
+        for list_i, (lane_point_i, _, _, _) in enumerate(car_entries):
+            lane_point_2_lane_list_i[(lane_id, lane_point_i)] = list_i
 
-        encountered_lanes = set(lane_2_cars.keys())
+    encountered_lanes = set(lane_2_cars.keys())
 
-        for lane_info_entry in track_speed_yaw_lane_point_list:
-            (agent_centroid, _, _, _,
-             _, agent_speed, agent_yaw, lane_id,
-             lane_point_i, _, _, _, _, _) = lane_info_entry
-            track_speed_yaw_lane_point_list_final.append(lane_info_entry.copy())
+    for lane_info_entry in track_speed_yaw_lane_point_list:
+        (agent_centroid, _, _, _,
+         _, agent_speed, agent_yaw, lane_id,
+         lane_point_i, _, _, _, _, _) = lane_info_entry
+        track_speed_yaw_lane_point_list_final.append(lane_info_entry.copy())
 
-            ################################
-            # next car estimation
-            # first, checking car in front on the same lane
-            lane_list_i = lane_point_2_lane_list_i[(lane_id, lane_point_i)]
-            if lane_list_i < len(lane_2_cars[lane_id]) - 1:
-                next_car_lane_point_i, next_agent_centroid, next_agent_speed, next_agent_yaw = lane_2_cars[lane_id][
-                    lane_list_i + 1]
-                dist, closing_speed = get_next_car_dist_speed(agent_centroid, agent_speed, agent_yaw,
-                                                              next_agent_centroid, next_agent_speed, next_agent_yaw)
-                lane_points_dist = next_car_lane_point_i - lane_point_i
-                track_speed_yaw_lane_point_list_final[-1].extend((lane_points_dist, dist, closing_speed))
-            else:
-                lane_points_dist_start = get_lane_len(lane_id) - lane_point_i
-                queue = deque()
-                queue.append((lane_id, lane_points_dist_start))
-                next_car_found = False
-                while len(queue) and not next_car_found:
-                    last_checked_lane, lane_points_dist_up_now = queue.popleft()
-                    for next_lane in get_lane_successors(last_checked_lane):
-                        if next_lane in lane_2_cars:
-                            next_car_lane_point_i, next_agent_centroid, next_agent_speed, next_agent_yaw = \
-                                lane_2_cars[next_lane][0]
-                            lane_points_dist = lane_points_dist_up_now + next_car_lane_point_i
-                            dist, closing_speed = get_next_car_dist_speed(agent_centroid, agent_speed, agent_yaw,
-                                                                          next_agent_centroid, next_agent_speed,
-                                                                          next_agent_yaw)
-                            track_speed_yaw_lane_point_list_final[-1].extend((lane_points_dist, dist, closing_speed))
-                            next_car_found = True
-                            break  # limiting myself to one next car (not aggregating over all paths forward)
-                        else:
-                            next_lane_len = get_lane_len(next_lane)
-                            if lane_points_dist_up_now + next_lane_len < min_lane_points_forward:
-                                queue.append(
-                                    (next_lane_len, lane_points_dist_up_now + next_lane_len < min_lane_points_forward))
+        ################################
+        # next car estimation
+        # first, checking car in front on the same lane
+        lane_list_i = lane_point_2_lane_list_i[(lane_id, lane_point_i)]
+        if lane_list_i < len(lane_2_cars[lane_id]) - 1:
+            next_car_lane_point_i, next_agent_centroid, next_agent_speed, next_agent_yaw = lane_2_cars[lane_id][
+                lane_list_i + 1]
+            dist, closing_speed = get_next_car_dist_speed(agent_centroid, agent_speed, agent_yaw,
+                                                          next_agent_centroid, next_agent_speed, next_agent_yaw)
+            lane_points_dist = next_car_lane_point_i - lane_point_i
+            track_speed_yaw_lane_point_list_final[-1].extend((lane_points_dist, dist, closing_speed))
+        else:
+            lane_points_dist_start = get_lane_len(lane_id) - lane_point_i
+            queue = deque()
+            queue.append((lane_id, lane_points_dist_start))
+            next_car_found = False
+            while len(queue) and not next_car_found:
+                last_checked_lane, lane_points_dist_up_now = queue.popleft()
+                for next_lane in get_lane_successors(last_checked_lane):
+                    if next_lane in lane_2_cars:
+                        next_car_lane_point_i, next_agent_centroid, next_agent_speed, next_agent_yaw = \
+                            lane_2_cars[next_lane][0]
+                        lane_points_dist = lane_points_dist_up_now + next_car_lane_point_i
+                        dist, closing_speed = get_next_car_dist_speed(agent_centroid, agent_speed, agent_yaw,
+                                                                      next_agent_centroid, next_agent_speed,
+                                                                      next_agent_yaw)
+                        track_speed_yaw_lane_point_list_final[-1].extend((lane_points_dist, dist, closing_speed))
+                        next_car_found = True
+                        break  # limiting myself to one next car (not aggregating over all paths forward)
+                    else:
+                        next_lane_len = get_lane_len(next_lane)
+                        if lane_points_dist_up_now + next_lane_len < min_lane_points_forward:
+                            queue.append(
+                                (next_lane_len, lane_points_dist_up_now + next_lane_len < min_lane_points_forward))
 
-            if len(track_speed_yaw_lane_point_list_final[-1]) == 14:
-                track_speed_yaw_lane_point_list_final[-1].extend(
-                    (min_lane_points_forward, min_lane_points_forward * 20, -10))
+        if len(track_speed_yaw_lane_point_list_final[-1]) == 14:
+            track_speed_yaw_lane_point_list_final[-1].extend(
+                (min_lane_points_forward, min_lane_points_forward * 20, -10))
 
-            #################################
-            # yield lines estimation
-            encountered_lanes_to_yield = encountered_lanes.intersection(lane_id_2_yield_lanes[lane_id])
-            if len(encountered_lanes_to_yield):
-                closest_dist = float('inf')
-                speed_of_closest = -1
-                for lane_to_yield in encountered_lanes_to_yield:
-                    for _, next_agent_centroid, next_agent_speed, _ in lane_2_cars[lane_to_yield]:
-                        dist_next = np.hypot(next_agent_centroid[0] - agent_centroid[0],
-                                             next_agent_centroid[1] - agent_centroid[1])
-                        if dist_next < closest_dist:
-                            closest_dist = dist_next
-                            speed_of_closest = next_agent_speed
-                track_speed_yaw_lane_point_list_final[-1].extend((closest_dist, speed_of_closest))
-            else:
-                track_speed_yaw_lane_point_list_final[-1].extend((80, -1))
+        #################################
+        # yield lines estimation
+        encountered_lanes_to_yield = encountered_lanes.intersection(lane_id_2_yield_lanes[lane_id])
+        if len(encountered_lanes_to_yield):
+            closest_dist = float('inf')
+            speed_of_closest = -1
+            for lane_to_yield in encountered_lanes_to_yield:
+                for _, next_agent_centroid, next_agent_speed, _ in lane_2_cars[lane_to_yield]:
+                    dist_next = np.hypot(next_agent_centroid[0] - agent_centroid[0],
+                                         next_agent_centroid[1] - agent_centroid[1])
+                    if dist_next < closest_dist:
+                        closest_dist = dist_next
+                        speed_of_closest = next_agent_speed
+            track_speed_yaw_lane_point_list_final[-1].extend((closest_dist, speed_of_closest))
+        else:
+            track_speed_yaw_lane_point_list_final[-1].extend((80, -1))
 
     # TODO: too long tuple, consider dataclass
     return track_speed_yaw_lane_point_list_final
+
 
 def agent_lanes_collate_fn(frames_batch,
                            intersection_2_predictions,
@@ -1569,10 +1569,12 @@ def agent_lanes_collate_fn(frames_batch,
         timestamp = datetime.fromtimestamp(frame['timestamp'] / 10 ** 9).astimezone(timezone('US/Pacific'))
         if timestamp_min < timestamp <= timestamp_max:
             agent_lanes_info = get_agent_lanes_info(frame, intersection_2_predictions)
+            print(f'"{len(agent_lanes_info)}"')
             batch_result.extend(agent_lanes_info)
     return np.array(batch_result)
 
 
+# memory intensive
 def get_agent_lanes_df(dataloader_frames):
     (agent_centroid_list, agent_track_id_list, scene_idx_list, timestamp_list,
      map_segment_group_list, agent_speed_list, agent_yaw_list, lane_id_list,
