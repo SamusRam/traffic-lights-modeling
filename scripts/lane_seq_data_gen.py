@@ -36,7 +36,8 @@ print('start: ', timestamp_min, 'end: ', timestamp_max)
 print('='*20)
 os.environ["L5KIT_DATA_FOLDER"] = "../input/"
 dm = LocalDataManager()
-dataset_path = dm.require(f'scenes/{zarr_basename}_filtered_min_frame_history_4_min_frame_future_1_with_mask_idx.zarr')
+dataset_path = dm.require(f'scenes/{zarr_basename}_filtered_min_frame_history_4_min_frame_future_1_with_mask_idx.zarr'
+                          if zarr_basename != 'test' else 'scenes/test.zarr')
 frame_dataset = FramesDataset(dataset_path, agents_from_standard_mask_only=True, return_indices=True)
 intersection_2_predictions = get_traffic_light_predictions_per_intersection(tl_predictions_base_name)
 dataloader_frames = DataLoader(frame_dataset, shuffle=False, batch_size=32,

@@ -277,11 +277,11 @@ for map_segment_idx, segment_lanes in enumerate(map_segment_2_lanes):
         kd_tree_, idx_map_ = get_kd_tree_and_idx_map(segment_lanes_bike_dict)
         map_segment_2_kd_tree_bike[map_segment_idx] = kd_tree_
         map_segment_2_kd_idx_2_lane_id_idx_bike[map_segment_idx] = idx_map_
-    if len(segment_lanes_bike_dict['ids']):
+    if len(segment_lanes_not_bike_dict['ids']):
         kd_tree_, idx_map_ = get_kd_tree_and_idx_map(segment_lanes_not_bike_dict)
         map_segment_2_kd_tree_not_bike[map_segment_idx] = kd_tree_
         map_segment_2_kd_idx_2_lane_id_idx_not_bike[map_segment_idx] = idx_map_
-    if len(segment_lanes_bike_dict['ids']):
+    if len(segment_lanes_dict['ids']):
         kd_tree_, idx_map_ = get_kd_tree_and_idx_map(segment_lanes_dict)
         map_segment_2_kd_tree[map_segment_idx] = kd_tree_
         map_segment_2_kd_idx_2_lane_id_idx[map_segment_idx] = idx_map_
