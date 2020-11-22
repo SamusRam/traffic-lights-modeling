@@ -1,0 +1,11 @@
+#!/bin/bash
+python tl_light_data_gen.py --input-name "validate"  > "../logs/tl_datagen_validate.log"
+python split_tl_data_per_intersection.py --joint-hdf-file "tl_events_df_validate_0.hdf5" > "../logs/tl_events_df_validate_0_intersection_split.log"
+python tl_light_data_gen.py --input-name "train_full" --timestamp-max "2020-01-01" > "../logs/tl_datagen_train_full_fold_0.log"
+python split_tl_data_per_intersection.py --joint-hdf-file "tl_events_df_train_full_0.hdf5" > "../logs/tl_events_df_train_full_0_intersection_split.log"
+python tl_light_data_gen.py --input-name "train_full" --timestamp-min "2020-01-01" --fold-i 1 > "../logs/tl_datagen_train_full_fold_1.log"
+python tl_light_data_gen.py --input-name "train"  > "../logs/tl_datagen_train.log"
+python group_tl_event_inputs.py --dataset-names "tl_events_df_train_full_1.hdf5" "tl_events_df_train_0.hdf5" --output-name "tl_events_df_train_full_1.hdf5"
+python split_tl_data_per_intersection.py --joint-hdf-file "tl_events_df_train_full_1.hdf5"
+python tl_light_data_gen.py --input-name "test" > "../logs/tl_datagen_test.log"
+python split_tl_data_per_intersection.py --joint-hdf-file "tl_events_df_test_0.hdf5" > "../logs/tl_events_df_test_0_intersection_split.log"

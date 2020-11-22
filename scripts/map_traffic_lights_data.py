@@ -13,6 +13,7 @@ from datetime import datetime
 from l5kit.data.filter import filter_tl_faces_by_status
 import pandas as pd
 from tqdm.auto import tqdm
+from glob import glob
 
 from collections import defaultdict, deque
 import bisect
@@ -272,15 +273,18 @@ for map_segment_idx, segment_lanes in enumerate(map_segment_2_lanes):
     segment_lanes_bike_dict, _ = get_lanes_dict_and_id_mapping(filter_function=lambda x: x in segment_lanes and
                                                                                          x in lane_ids_bike_only)
     segment_lanes_dict, _ = get_lanes_dict_and_id_mapping(filter_function=lambda x: x in segment_lanes)
-    map_segment_2_kd_tree_bike[map_segment_idx], map_segment_2_kd_idx_2_lane_id_idx_bike[
-        map_segment_idx] = get_kd_tree_and_idx_map(segment_lanes_bike_dict) if len(
-        segment_lanes_bike_dict['ids']) else None, None
-    map_segment_2_kd_tree_not_bike[map_segment_idx], map_segment_2_kd_idx_2_lane_id_idx_not_bike[
-        map_segment_idx] = get_kd_tree_and_idx_map(segment_lanes_not_bike_dict) if len(
-        segment_lanes_bike_dict['ids']) else None, None
-    map_segment_2_kd_tree[map_segment_idx], map_segment_2_kd_idx_2_lane_id_idx[
-        map_segment_idx] = get_kd_tree_and_idx_map(segment_lanes_dict) if len(
-        segment_lanes_bike_dict['ids']) else None, None
+    if len(segment_lanes_bike_dict['ids']):
+        kd_tree_, idx_map_ = get_kd_tree_and_idx_map(segment_lanes_bike_dict)
+        map_segment_2_kd_tree_bike[map_segment_idx] = kd_tree_
+        map_segment_2_kd_idx_2_lane_id_idx_bike[map_segment_idx] = idx_map_
+    if len(segment_lanes_bike_dict['ids']):
+        kd_tree_, idx_map_ = get_kd_tree_and_idx_map(segment_lanes_not_bike_dict)
+        map_segment_2_kd_tree_not_bike[map_segment_idx] = kd_tree_
+        map_segment_2_kd_idx_2_lane_id_idx_not_bike[map_segment_idx] = idx_map_
+    if len(segment_lanes_bike_dict['ids']):
+        kd_tree_, idx_map_ = get_kd_tree_and_idx_map(segment_lanes_dict)
+        map_segment_2_kd_tree[map_segment_idx] = kd_tree_
+        map_segment_2_kd_idx_2_lane_id_idx[map_segment_idx] = idx_map_
 
 tl_control_2_junctions = defaultdict(list)
 junction_2_tl_controls = defaultdict(list)
@@ -637,45 +641,84 @@ for tl_faces, intersection_idx_set in tl_faces_set_2_master_intersections.items(
     tl_faces_set_2_master_intersections[tl_faces] = list(intersection_idx_set)[0]
 # tl_signal_idx corresponds to the set of tl faces with the same set of lanes under control and therefore (presumably) the same signal
 
-controlled_lane_id_2_tl_signal_idx = dict()
-exit_lane_id_2_tl_signal_idx = dict()
-tl_signal_idx_2_controlled_lanes = []
-tl_signal_idx_2_exit_lanes = []
-tl_signal_idx_2_stop_coordinates = []
-master_intersection_idx_2_tl_signal_indices = defaultdict(list)
-tl_face_id_2_tl_signal_indices = defaultdict(set)
 
-min_required_len_after_stop_line = 7
+master_intersection_idx_2_tl_signal_indices_path = '../input/master_intersection_idx_2_tl_signal_indices.pkl'
+tl_face_id_2_tl_signal_indices_path = '../input/tl_face_id_2_tl_signal_indices.pkl'
+tl_signal_idx_2_controlled_lanes_path = '../input/tl_signal_idx_2_controlled_lanes.pkl'
+tl_signal_idx_2_exit_lanes_path = '../input/tl_signal_idx_2_exit_lanes.pkl'
+tl_signal_idx_2_stop_coordinates_path = '../input/tl_signal_idx_2_stop_coordinates.pkl'
+controlled_lane_id_2_tl_signal_idx_path = '../input/controlled_lane_id_2_tl_signal_idx.pkl'
+exit_lane_id_2_tl_signal_idx_path = '../input/exit_lane_id_2_tl_signal_idx.pkl'
+if os.path.exists(master_intersection_idx_2_tl_signal_indices_path):
+    with open(master_intersection_idx_2_tl_signal_indices_path, 'rb') as f:
+        master_intersection_idx_2_tl_signal_indices = pickle.load(f)
+    with open(tl_face_id_2_tl_signal_indices_path, 'rb') as f:
+        tl_face_id_2_tl_signal_indices = pickle.load(f)
+    with open(tl_signal_idx_2_controlled_lanes_path, 'rb') as f:
+        tl_signal_idx_2_controlled_lanes = pickle.load(f)
+    with open(tl_signal_idx_2_exit_lanes_path, 'rb') as f:
+        tl_signal_idx_2_exit_lanes = pickle.load(f)
+    with open(tl_signal_idx_2_stop_coordinates_path, 'rb') as f:
+        tl_signal_idx_2_stop_coordinates = pickle.load(f)
+    with open(controlled_lane_id_2_tl_signal_idx_path, 'rb') as f:
+        controlled_lane_id_2_tl_signal_idx = pickle.load(f)
+    with open(exit_lane_id_2_tl_signal_idx_path, 'rb') as f:
+        exit_lane_id_2_tl_signal_idx = pickle.load(f)
+else:
+    master_intersection_idx_2_tl_signal_indices = defaultdict(list)
+    tl_face_id_2_tl_signal_indices = defaultdict(set)
+    tl_signal_idx_2_controlled_lanes = []
+    tl_signal_idx_2_exit_lanes = []
+    tl_signal_idx_2_stop_coordinates = []
+    controlled_lane_id_2_tl_signal_idx = dict()
+    exit_lane_id_2_tl_signal_idx = dict()
 
-for tl_face_ids, controlled_lanes in sorted(tl_faces_set_2_lanes.items(), key=lambda x: x[0]):
-    tl_signal_idx = len(tl_signal_idx_2_controlled_lanes)
-    for lane_id in controlled_lanes:
-        controlled_lane_id_2_tl_signal_idx[lane_id] = tl_signal_idx
-    tl_signal_idx_2_controlled_lanes.append(set(controlled_lanes))
-    master_intersection_idx_2_tl_signal_indices[tl_faces_set_2_master_intersections[tl_face_ids]].append(tl_signal_idx)
-    stop_coordinates = []
-    tl_signal_idx_2_exit_lanes.append(set())
-    for lane_id in controlled_lanes:
+    min_required_len_after_stop_line = 7
 
-        if is_the_end_controlled_lane(lane_id, controlled_lanes):
-            stop_coordinates.append(get_lane_center_line(lane_id)[-1])
+    for tl_face_ids, controlled_lanes in sorted(tl_faces_set_2_lanes.items(), key=lambda x: x[0]):
+        tl_signal_idx = len(tl_signal_idx_2_controlled_lanes)
+        for lane_id in controlled_lanes:
+            controlled_lane_id_2_tl_signal_idx[lane_id] = tl_signal_idx
+        tl_signal_idx_2_controlled_lanes.append(set(controlled_lanes))
+        master_intersection_idx_2_tl_signal_indices[tl_faces_set_2_master_intersections[tl_face_ids]].append(
+            tl_signal_idx)
+        stop_coordinates = []
+        tl_signal_idx_2_exit_lanes.append(set())
+        for lane_id in controlled_lanes:
 
-            dist_from_stop_line = 0
-            queue = deque()
-            queue.append((lane_id, dist_from_stop_line))
-            while len(queue):
-                next_lane, dist_from_stop_line = queue.popleft()
-                if dist_from_stop_line != 0:  # not the end lane
-                    tl_signal_idx_2_exit_lanes[tl_signal_idx].add(next_lane)
-                    exit_lane_id_2_tl_signal_idx[next_lane] = tl_signal_idx
-                if dist_from_stop_line < min_required_len_after_stop_line:
-                    lanes_next = get_lane_successors(next_lane)
-                    for lane_next_id in lanes_next:
-                        queue.append((lane_next_id, dist_from_stop_line + get_lane_len(lane_next_id)))
+            if is_the_end_controlled_lane(lane_id, controlled_lanes):
+                stop_coordinates.append(get_lane_center_line(lane_id)[-1])
 
-    tl_signal_idx_2_stop_coordinates.append(stop_coordinates)
-    for tl_face_id in tl_face_ids:
-        tl_face_id_2_tl_signal_indices[tl_face_id].add(tl_signal_idx)
+                dist_from_stop_line = 0
+                queue = deque()
+                queue.append((lane_id, dist_from_stop_line))
+                while len(queue):
+                    next_lane, dist_from_stop_line = queue.popleft()
+                    if dist_from_stop_line != 0:  # not the end lane
+                        tl_signal_idx_2_exit_lanes[tl_signal_idx].add(next_lane)
+                        exit_lane_id_2_tl_signal_idx[next_lane] = tl_signal_idx
+                    if dist_from_stop_line < min_required_len_after_stop_line:
+                        lanes_next = get_lane_successors(next_lane)
+                        for lane_next_id in lanes_next:
+                            queue.append((lane_next_id, dist_from_stop_line + get_lane_len(lane_next_id)))
+
+        tl_signal_idx_2_stop_coordinates.append(stop_coordinates)
+        for tl_face_id in tl_face_ids:
+            tl_face_id_2_tl_signal_indices[tl_face_id].add(tl_signal_idx)
+    with open(master_intersection_idx_2_tl_signal_indices_path, 'wb') as f:
+        pickle.dump(master_intersection_idx_2_tl_signal_indices, f)
+    with open(tl_face_id_2_tl_signal_indices_path, 'wb') as f:
+        pickle.dump(tl_face_id_2_tl_signal_indices, f)
+    with open(tl_signal_idx_2_controlled_lanes_path, 'wb') as f:
+        pickle.dump(tl_signal_idx_2_controlled_lanes, f)
+    with open(tl_signal_idx_2_exit_lanes_path, 'wb') as f:
+        pickle.dump(tl_signal_idx_2_exit_lanes, f)
+    with open(tl_signal_idx_2_stop_coordinates_path, 'wb') as f:
+        pickle.dump(tl_signal_idx_2_stop_coordinates, f)
+    with open(controlled_lane_id_2_tl_signal_idx_path, 'wb') as f:
+        pickle.dump(controlled_lane_id_2_tl_signal_idx, f)
+    with open(exit_lane_id_2_tl_signal_idx_path, 'wb') as f:
+        pickle.dump(exit_lane_id_2_tl_signal_idx, f)
 
 lane_2_master_intersection_related_lanes = dict()  # ->set
 lane_id_2_master_intersection_idx = dict()
@@ -750,14 +793,14 @@ def match_point_2_map_segment(x_coord, y_coord,
                   key=lambda segment_i: len(map_segment_2_lanes[segment_i]))
 
 
-def get_candidate_lane_points(candidate_indices, agent_class, intersections_only):
-    return [get_lane_point_from_kdtree(candidate_idx, agent_class, intersections_only)
+def get_candidate_lane_points(candidate_indices, agent_class, intersections_only, map_segment_idx=None):
+    return [get_lane_point_from_kdtree(candidate_idx, agent_class, intersections_only, map_segment_idx)
             for candidate_idx in candidate_indices]
 
 
 def get_closest_lanes(coord, agent_class, k_nearest,
                       intersections_only=False,
-                      segmented_map=False):
+                      segmented_map=True):
     # TODO: distance_upper_bound kd_tree param and handling empty return
     if agent_class == BIKE_CLASS:
         if intersections_only:
@@ -773,7 +816,7 @@ def get_closest_lanes(coord, agent_class, k_nearest,
                 candidate_distances, candidate_indices = map_segment_2_kd_tree_bike[map_segment_indices[0]].query(coord,
                                                                                                                   k=k_nearest)
                 return candidate_distances, get_candidate_lane_points(candidate_indices, agent_class,
-                                                                      intersections_only)
+                                                                      intersections_only, map_segment_indices[0])
         candidate_distances, candidate_indices = kd_tree_bike.query(coord, k=k_nearest)
         return candidate_distances, get_candidate_lane_points(candidate_indices, agent_class, intersections_only)
     elif agent_class == CAR_CLASS:
@@ -790,7 +833,7 @@ def get_closest_lanes(coord, agent_class, k_nearest,
                 candidate_distances, candidate_indices = map_segment_2_kd_tree_not_bike[map_segment_indices[0]].query(coord,
                                                                                                                   k=k_nearest)
                 return candidate_distances, get_candidate_lane_points(candidate_indices, agent_class,
-                                                                      intersections_only)
+                                                                      intersections_only, map_segment_indices[0])
         candidate_distances, candidate_indices = kd_tree_not_bike.query(coord, k=k_nearest)
         return candidate_distances, get_candidate_lane_points(candidate_indices, agent_class, intersections_only)
     elif agent_class == ALL_WHEELS_CLASS:
@@ -808,7 +851,7 @@ def get_closest_lanes(coord, agent_class, k_nearest,
                     coord,
                     k=k_nearest)
                 return candidate_distances, get_candidate_lane_points(candidate_indices, agent_class,
-                                                                      intersections_only)
+                                                                      intersections_only, map_segment_indices[0])
 
         candidate_distances, candidate_indices = kd_tree.query(coord, k=k_nearest)
         return candidate_distances, get_candidate_lane_points(candidate_indices, agent_class, intersections_only)
@@ -816,18 +859,24 @@ def get_closest_lanes(coord, agent_class, k_nearest,
         raise NotImplementedError('Only bikes and general cars supported')
 
 
-def get_lane_point_from_kdtree(candidate_idx, agent_class, intersections_only=False):
+def get_lane_point_from_kdtree(candidate_idx, agent_class, intersections_only=False, map_segment_idx=None):
     if agent_class == BIKE_CLASS:
         if intersections_only:
             return kd_idx_2_lane_id_idx_bike_intersection[candidate_idx]
+        if map_segment_idx is not None:
+            return map_segment_2_kd_idx_2_lane_id_idx_bike[map_segment_idx][candidate_idx]
         return kd_idx_2_lane_id_idx_bike[candidate_idx]
     elif agent_class == CAR_CLASS:
         if intersections_only:
             return kd_idx_2_lane_id_idx_not_bike_intersection[candidate_idx]
+        if map_segment_idx is not None:
+            return map_segment_2_kd_idx_2_lane_id_idx_not_bike[map_segment_idx][candidate_idx]
         return kd_idx_2_lane_id_idx_not_bike[candidate_idx]
     elif agent_class == ALL_WHEELS_CLASS:
         if intersections_only:
             return kd_idx_2_lane_id_idx_intersection[candidate_idx]
+        if map_segment_idx is not None:
+            return map_segment_2_kd_idx_2_lane_id_idx[map_segment_idx][candidate_idx]
         return kd_idx_2_lane_id_idx[candidate_idx]
 
 
@@ -1142,20 +1191,26 @@ def tl_seq_collate_fn(frames_batch, timestamp_min, timestamp_max):
         timestamp = datetime.fromtimestamp(frame['timestamp'] / 10 ** 9).astimezone(timezone('US/Pacific'))
         if timestamp_min < timestamp <= timestamp_max:
             info_related_lanes = get_info_per_related_lanes(frame)
+
             if len(info_related_lanes):
                 master_intersection_idx, timestamp, ego_centroid, ego_yaw, lanes_info, tl_faces_info = info_related_lanes
                 tl_signals_GO, tl_signals_STOP, observed_events = get_tl_signal_current(lanes_info, tl_faces_info)
+                scene_idx = frame['scene_index']
+                frame_idx = frame['state_index']
                 batch_result.append(
-                    (master_intersection_idx, timestamp, ego_centroid, observed_events, tl_signals_GO, tl_signals_STOP))
+                    (scene_idx, frame_idx, master_intersection_idx, timestamp, ego_centroid, observed_events,
+                     tl_signals_GO, tl_signals_STOP))
     return np.array(batch_result)
 
 
 def get_tl_events_df(dataloader_frames):
-    master_intersection_idx_list, timestamp_list, ego_centroid_list, observed_events_list, tl_signals_GO_list, tl_signals_STOP_list = [
-        [] for _ in range(6)]
+    scene_idx_list, frame_idx_list, master_intersection_idx_list, timestamp_list, ego_centroid_list, observed_events_list, tl_signals_GO_list, tl_signals_STOP_list = [
+        [] for _ in range(8)]
     for batch in tqdm(dataloader_frames, desc='Tl events...'):
         for record in batch:
-            master_intersection_idx, timestamp, ego_centroid, observed_events, tl_signals_GO, tl_signals_STOP = record
+            scene_idx, frame_idx, master_intersection_idx, timestamp, ego_centroid, observed_events, tl_signals_GO, tl_signals_STOP = record
+            scene_idx_list.append(scene_idx)
+            frame_idx_list.append(frame_idx)
             master_intersection_idx_list.append(master_intersection_idx)
             timestamp_list.append(timestamp)
             ego_centroid_list.append(ego_centroid)
@@ -1163,7 +1218,9 @@ def get_tl_events_df(dataloader_frames):
             tl_signals_GO_list.append(tl_signals_GO)
             tl_signals_STOP_list.append(tl_signals_STOP)
 
-    tl_events_df = pd.DataFrame({'master_intersection_idx': master_intersection_idx_list,
+    tl_events_df = pd.DataFrame({'scene_idx': scene_idx_list,
+                                 'frame_idx': frame_idx_list,
+                                 'master_intersection_idx': master_intersection_idx_list,
                                  'timestamp': timestamp_list,
                                  'ego_centroid': ego_centroid_list,
                                  'observed_events': observed_events_list,
@@ -1299,14 +1356,85 @@ def compute_rnn_inputs(tl_events_df):
         tl_events_df.loc[row_idx]['rnn_inputs_raw'].extend(tl_inputs + lane_inputs)
 
 
-def get_agent_lanes_info(frame_sample, add_centroid=False):
+def get_cos_between_yaws(yaw_rad_1, yaw_rad_2):
+    x1 = np.cos(yaw_rad_1)
+    y1 = np.sin(yaw_rad_1)
+    x2 = np.cos(yaw_rad_2)
+    y2 = np.sin(yaw_rad_2)
+    vector_product = x1 * x2 + y1 * y2
+    cos = vector_product / (np.hypot(x1, y1) * np.hypot(x2, y2))
+    return cos
+
+
+def get_next_car_dist_speed(agent_centroid, agent_speed, agent_yaw,
+                            next_agent_centroid, next_agent_speed, next_agent_yaw):
+    dist = np.hypot(agent_centroid[0] - next_agent_centroid[0], agent_centroid[1] - next_agent_centroid[1])
+    cos_between_yaws = get_cos_between_yaws(agent_yaw, next_agent_yaw)
+    closing_speed = agent_speed - cos_between_yaws * next_agent_speed
+    return dist, closing_speed
+
+
+semantic_map_path = dm.require(semantic_map_key)
+proto_API = MapAPI(semantic_map_path, world_to_ecef)
+
+######################
+# getting yield sets
+lane_id_2_yield_lanes = defaultdict(set)
+min_yield_points = 10
+
+lane_id_2_yield_lanes_init = dict()
+for lane_id in lane_id_2_idx:
+    lane_ids_to_yield = proto_API.get_lanes_to_yield(lane_id)
+    if len(lane_ids_to_yield):
+        lane_id_2_yield_lanes_init[lane_id] = lane_ids_to_yield
+lane_id_2_yield_lanes_init.update(red_turn_lane_2_yield_lanes)
+
+for lane_id, lane_ids_to_yield in lane_id_2_yield_lanes_init.items():
+    if lane_id in exit_lane_id_2_tl_signal_idx:  # focusing on the most common case of traffic lights being on; 95.7% of lanes with lanes to yield are not tl exit lanes
+        continue
+    for lane_id_to_yield in lane_ids_to_yield:
+        queue = deque()
+        queue.append((lane_id_to_yield, get_lane_len(lane_id_to_yield)))
+        while len(queue):
+            lane_id_to_yield_, yield_points_current = queue.popleft()
+            lane_id_2_yield_lanes[lane_id].add(lane_id_to_yield_)
+            for prev_lane in get_lane_predecessors(lane_id_to_yield_):
+                prev_lane_len = get_lane_len(prev_lane)
+                if yield_points_current < min_yield_points:
+                    queue.append((prev_lane, yield_points_current + prev_lane_len))
+
+##########################
+# traffic light signals
+tl_signal_idx_2_master_intersection_idx = dict()
+for intersection_i, tl_signal_indices in master_intersection_idx_2_tl_signal_indices.items():
+    for tl_signal_i in tl_signal_indices:
+        tl_signal_idx_2_master_intersection_idx[tl_signal_i] = intersection_i
+
+
+def get_traffic_light_predictions_per_intersection(tl_predictions_base_name):
+    tl_prediction_paths = glob(f'../outputs/tl_predictions/{tl_predictions_base_name}*')
+    N_INTERSECTIONS = 10
+    intersection_2_predictions = defaultdict(list)
+    for intersection_i in range(N_INTERSECTIONS):
+        intersection_paths = [x for x in tl_prediction_paths if f'intersection_{intersection_i}' in x]
+        for intersection_path in intersection_paths:
+            intersection_2_predictions[intersection_i].append(
+                pd.read_hdf(intersection_path).set_index(['scene_idx', 'scene_frame_idx']))
+    return intersection_2_predictions
+
+
+def get_agent_lanes_info(frame_sample, intersection_2_predictions, min_lane_points_forward=30):
     timestamp = datetime.fromtimestamp(frame_sample['timestamp'] / 10 ** 9).astimezone(timezone('US/Pacific'))
     scene_idx = frame_sample['scene_index']
     track_speed_yaw_lane_point_list = []
+    track_speed_yaw_lane_point_list_final = []
     agents_with_wheels = [(agent, ALL_WHEELS_CLASS) for
                           agent in frame_sample['agents'] if np.nonzero(agent[-1])[0][0] in [CAR_CLASS, BIKE_CLASS]]
     # agents_with_wheels = [(agent, ALL_WHEELS_CLASS if np.nonzero(agent[-1])[0][0] == CAR_CLASS else BIKE_CLASS) for
     #                       agent in frame_sample['agents'] if np.nonzero(agent[-1])[0][0] in [CAR_CLASS, BIKE_CLASS]]
+
+    # lane_id -> List[(point_i, centroid, speed, yaw)]
+    lane_2_cars = defaultdict(list)
     for agent, agent_class in agents_with_wheels:
         agent_track_id = agent[-2]
         agent_speed = np.hypot(*agent[-3])
@@ -1324,38 +1452,139 @@ def get_agent_lanes_info(frame_sample, add_centroid=False):
             map_segment_group = NUM_MAP_SEGMENTS
         if find_closest_result is not None:
             lane_id, lane_point_i = find_closest_result
-            if add_centroid:
-                track_speed_yaw_lane_point_list.append((agent_centroid, agent_track_id, scene_idx, timestamp,
-                                                        map_segment_group, agent_speed, agent_yaw, lane_id,
-                                                        lane_point_i))
-            else:
-                agent_centroid_shift = agent_centroid - get_lane_point_coordinates(lane_id, lane_point_i)
-                track_speed_yaw_lane_point_list.append((agent_centroid_shift, agent_track_id, scene_idx, timestamp,
-                                                        map_segment_group, agent_speed, agent_yaw, lane_id,
-                                                        lane_point_i))
+            lane_2_cars[lane_id].append((lane_point_i, agent_centroid, agent_speed, agent_yaw))
 
-    return track_speed_yaw_lane_point_list
+            # adding traffic light predictions
+            if lane_id in controlled_lane_id_2_tl_signal_idx:
+                # scene_idx	scene_frame_idx	10_green_prob	10_tte_mode	10_tte_25th_perc	10_tte_75th_perc
+                tl_signal_idx = controlled_lane_id_2_tl_signal_idx[lane_id]
+                intersections_i = tl_signal_idx_2_master_intersection_idx[tl_signal_idx]
+                green_prob_list, tl_tte_mode_list_list, tl_tte_25th_perc_list, tl_tte_75th_perc_list = [], [], [], []
+                state_idx = frame_sample['state_index']
+                for intersection_pred_df in intersection_2_predictions[intersections_i]:
+                    if (scene_idx, state_idx) in intersection_pred_df.index:
+                        tl_events_pred_current = intersection_pred_df.loc[[(scene_idx, state_idx)]]
+                        green_prob_list.append(tl_events_pred_current[f'{tl_signal_idx}_green_prob'].values[0])
+                        tl_tte_mode_list_list.append(tl_events_pred_current[f'{tl_signal_idx}_tte_mode'].values[0])
+                        tl_tte_25th_perc_list.append(tl_events_pred_current[f'{tl_signal_idx}_tte_25th_perc'].values[0])
+                        tl_tte_75th_perc_list.append(tl_events_pred_current[f'{tl_signal_idx}_tte_75th_perc'].values[0])
+                green_prob, tl_tte_mode, tl_tte_25th_perc, tl_tte_75th_perc = [np.nanmean(x) for x in [green_prob_list,
+                                                                                                       tl_tte_mode_list_list,
+                                                                                                       tl_tte_25th_perc_list,
+                                                                                                       tl_tte_75th_perc_list]]
+
+            else:
+                green_prob, tl_tte_mode, tl_tte_25th_perc, tl_tte_75th_perc = 1.1, 6, 6, 6
+            track_speed_yaw_lane_point_list.append([agent_centroid, agent_track_id, scene_idx, timestamp,
+                                                    map_segment_group, agent_speed, agent_yaw, lane_id,
+                                                    lane_point_i, proto_API.get_speed_limit(lane_id) - agent_speed,
+                                                    green_prob, tl_tte_mode, tl_tte_25th_perc, tl_tte_75th_perc])
+
+        for lane_id, vals in lane_2_cars.items():
+            lane_2_cars[lane_id] = sorted(vals, key=lambda x: x[0])
+        lane_point_2_lane_list_i = dict()
+        for lane_id, car_entries in lane_2_cars.items():
+            for list_i, (lane_point_i, _, _, _) in enumerate(car_entries):
+                lane_point_2_lane_list_i[(lane_id, lane_point_i)] = list_i
+
+        encountered_lanes = set(lane_2_cars.keys())
+
+        for lane_info_entry in track_speed_yaw_lane_point_list:
+            (agent_centroid, _, _, _,
+             _, agent_speed, agent_yaw, lane_id,
+             lane_point_i, _, _, _, _, _) = lane_info_entry
+            track_speed_yaw_lane_point_list_final.append(lane_info_entry.copy())
+
+            ################################
+            # next car estimation
+            # first, checking car in front on the same lane
+            lane_list_i = lane_point_2_lane_list_i[(lane_id, lane_point_i)]
+            if lane_list_i < len(lane_2_cars[lane_id]) - 1:
+                next_car_lane_point_i, next_agent_centroid, next_agent_speed, next_agent_yaw = lane_2_cars[lane_id][
+                    lane_list_i + 1]
+                dist, closing_speed = get_next_car_dist_speed(agent_centroid, agent_speed, agent_yaw,
+                                                              next_agent_centroid, next_agent_speed, next_agent_yaw)
+                lane_points_dist = next_car_lane_point_i - lane_point_i
+                track_speed_yaw_lane_point_list_final[-1].extend((lane_points_dist, dist, closing_speed))
+            else:
+                lane_points_dist_start = get_lane_len(lane_id) - lane_point_i
+                queue = deque()
+                queue.append((lane_id, lane_points_dist_start))
+                next_car_found = False
+                while len(queue) and not next_car_found:
+                    last_checked_lane, lane_points_dist_up_now = queue.popleft()
+                    for next_lane in get_lane_successors(last_checked_lane):
+                        if next_lane in lane_2_cars:
+                            next_car_lane_point_i, next_agent_centroid, next_agent_speed, next_agent_yaw = \
+                                lane_2_cars[next_lane][0]
+                            lane_points_dist = lane_points_dist_up_now + next_car_lane_point_i
+                            dist, closing_speed = get_next_car_dist_speed(agent_centroid, agent_speed, agent_yaw,
+                                                                          next_agent_centroid, next_agent_speed,
+                                                                          next_agent_yaw)
+                            track_speed_yaw_lane_point_list_final[-1].extend((lane_points_dist, dist, closing_speed))
+                            next_car_found = True
+                            break  # limiting myself to one next car (not aggregating over all cars forward)
+                        else:
+                            next_lane_len = get_lane_len(next_lane)
+                            if lane_points_dist_up_now + next_lane_len < min_lane_points_forward:
+                                queue.append(
+                                    (next_lane_len, lane_points_dist_up_now + next_lane_len < min_lane_points_forward))
+
+            if len(track_speed_yaw_lane_point_list_final[-1]) == 14:
+                track_speed_yaw_lane_point_list_final[-1].extend(
+                    (min_lane_points_forward, min_lane_points_forward * 20, -10))
+
+            #################################
+            # yield lines estimation
+            encountered_lanes_to_yield = encountered_lanes.intersection(lane_id_2_yield_lanes[lane_id])
+            if len(encountered_lanes_to_yield):
+                closest_dist = float('inf')
+                speed_of_closest = -1
+                for lane_to_yield in encountered_lanes_to_yield:
+                    for _, next_agent_centroid, next_agent_speed, _ in lane_2_cars[lane_to_yield]:
+                        dist_next = np.hypot(next_agent_centroid[0] - agent_centroid[0],
+                                             next_agent_centroid[1] - agent_centroid[1])
+                        if dist_next < closest_dist:
+                            closest_dist = dist_next
+                            speed_of_closest = next_agent_speed
+                track_speed_yaw_lane_point_list_final[-1].extend((closest_dist, speed_of_closest))
+            else:
+                track_speed_yaw_lane_point_list_final[-1].extend((80, -1))
+
+    # TODO: too long tuple, consider dataclass
+    return track_speed_yaw_lane_point_list_final
 
 
 def agent_lanes_collate_fn(frames_batch,
+                           intersection_2_predictions,
                            timestamp_min=datetime(1970, 11, 20).astimezone(timezone('US/Pacific')),
                            timestamp_max=datetime(2021, 11, 20).astimezone(timezone('US/Pacific'))):
     batch_result = []
     for frame in frames_batch:
         timestamp = datetime.fromtimestamp(frame['timestamp'] / 10 ** 9).astimezone(timezone('US/Pacific'))
         if timestamp_min < timestamp <= timestamp_max:
-            agent_lanes_info = get_agent_lanes_info(frame)
+            agent_lanes_info = get_agent_lanes_info(frame, intersection_2_predictions)
             batch_result.extend(agent_lanes_info)
     return np.array(batch_result)
 
 
 def get_agent_lanes_df(dataloader_frames):
-    agent_centroid_shift_list, agent_track_id_list, scene_idx_list, timestamp_list, map_segment_group_list, agent_speed_list, agent_yaw_list, lane_id_list, lane_point_i_list = [
-        [] for _ in range(9)]
+    (agent_centroid_list, agent_track_id_list, scene_idx_list, timestamp_list,
+     map_segment_group_list, agent_speed_list, agent_yaw_list, lane_id_list,
+     lane_point_i_list, remaining_speed_lim_list,
+     green_prob_list, tl_tte_mode_list, tl_tte_25th_perc_list, tl_tte_75th_perc_list,
+     next_car_lane_points_dist_list,
+     next_car_dist_list, next_car_closing_speed_list,
+     yield_closest_dist_list, yield_speed_of_closest_list) = [[] for _ in range(19)]
     for batch in tqdm(dataloader_frames, desc='Agents info events...'):
         for record in batch:
-            agent_centroid_shift, agent_track_id, scene_idx, timestamp, map_segment_group, agent_speed, agent_yaw, lane_id, lane_point_i = record
-            agent_centroid_shift_list.append(agent_centroid_shift)
+            (agent_centroid, agent_track_id, scene_idx, timestamp,
+             map_segment_group, agent_speed,
+             agent_yaw, lane_id, lane_point_i, remaining_speed_lim,
+             green_prob, tl_tte_mode, tl_tte_25th_perc, tl_tte_75th_perc,
+             next_car_lane_points_dist,
+             next_car_dist, next_car_closing_speed, yield_closest_dist, yield_speed_of_closest) = record
+            agent_centroid_list.append(agent_centroid)
             agent_track_id_list.append(agent_track_id)
             scene_idx_list.append(scene_idx)
             timestamp_list.append(timestamp)
@@ -1364,19 +1593,36 @@ def get_agent_lanes_df(dataloader_frames):
             agent_yaw_list.append(agent_yaw)
             lane_id_list.append(lane_id)
             lane_point_i_list.append(lane_point_i)
+            remaining_speed_lim_list.append(remaining_speed_lim)
+            green_prob_list.append(green_prob)
+            tl_tte_mode_list.append(tl_tte_mode)
+            tl_tte_25th_perc_list.append(tl_tte_25th_perc)
+            tl_tte_75th_perc_list.append(tl_tte_75th_perc)
+            next_car_lane_points_dist_list.append(next_car_lane_points_dist)
+            next_car_dist_list.append(next_car_dist)
+            next_car_closing_speed_list.append(next_car_closing_speed)
+            yield_closest_dist_list.append(yield_closest_dist)
+            yield_speed_of_closest_list.append(yield_speed_of_closest)
 
     agent_lanes_df = pd.DataFrame({'agent_track_id': agent_track_id_list,
                                    'scene_idx': scene_idx_list,
-                                 'timestamp': timestamp_list,
+                                   'timestamp': timestamp_list,
                                    'map_segment_group': map_segment_group_list,
-                                   'agent_centroid_shift': agent_centroid_shift_list,
-                                 'agent_speed': agent_speed_list,
-                                 'agent_yaw': agent_yaw_list,
-                                 'lane_id': lane_id_list,
-                                 'lane_point_i': lane_point_i_list})
+                                   'agent_centroid': agent_centroid_list,
+                                   'agent_speed': agent_speed_list,
+                                   'agent_yaw': agent_yaw_list,
+                                   'lane_id': lane_id_list,
+                                   'lane_point_i': lane_point_i_list,
+                                   'remaining_speed_lim': remaining_speed_lim_list,
+                                   'green_prob': green_prob_list,
+                                   'tl_tte_mode': tl_tte_mode_list,
+                                   'tl_tte_25th_perc': tl_tte_25th_perc_list,
+                                   'tl_tte_75th_perc': tl_tte_75th_perc_list,
+                                   'next_car_lane_points_dist': next_car_lane_points_dist_list,
+                                   'next_car_dist': next_car_dist_list,
+                                   'next_car_closing_speed': next_car_closing_speed_list,
+                                   'yield_closest_dist': yield_closest_dist_list,
+                                   'yield_speed_of_closest': yield_speed_of_closest_list
+                                   })
     agent_lanes_df.sort_values(by=['agent_track_id', 'scene_idx', 'timestamp'], inplace=True)
     return agent_lanes_df
-
-
-
-
