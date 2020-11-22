@@ -1463,11 +1463,11 @@ def get_agent_lanes_info(frame_sample, intersection_2_predictions, min_lane_poin
                 state_idx = frame_sample['state_index']
                 for intersection_pred_df in intersection_2_predictions[intersections_i]:
                     if (scene_idx, state_idx) in intersection_pred_df.index:
-                        tl_events_pred_current = intersection_pred_df.loc[[(scene_idx, state_idx)]]
-                        green_prob_list.append(tl_events_pred_current[f'{tl_signal_idx}_green_prob'].values[0])
-                        tl_tte_mode_list_list.append(tl_events_pred_current[f'{tl_signal_idx}_tte_mode'].values[0])
-                        tl_tte_25th_perc_list.append(tl_events_pred_current[f'{tl_signal_idx}_tte_25th_perc'].values[0])
-                        tl_tte_75th_perc_list.append(tl_events_pred_current[f'{tl_signal_idx}_tte_75th_perc'].values[0])
+                        tl_events_pred_current = intersection_pred_df.loc[(scene_idx, state_idx)]
+                        green_prob_list.append(tl_events_pred_current[f'{tl_signal_idx}_green_prob'])
+                        tl_tte_mode_list_list.append(tl_events_pred_current[f'{tl_signal_idx}_tte_mode'])
+                        tl_tte_25th_perc_list.append(tl_events_pred_current[f'{tl_signal_idx}_tte_25th_perc'])
+                        tl_tte_75th_perc_list.append(tl_events_pred_current[f'{tl_signal_idx}_tte_75th_perc'])
                 green_prob, tl_tte_mode, tl_tte_25th_perc, tl_tte_75th_perc = [np.nanmean(x) for x in [green_prob_list,
                                                                                                        tl_tte_mode_list_list,
                                                                                                        tl_tte_25th_perc_list,
@@ -1523,7 +1523,7 @@ def get_agent_lanes_info(frame_sample, intersection_2_predictions, min_lane_poin
                                                                           next_agent_yaw)
                             track_speed_yaw_lane_point_list_final[-1].extend((lane_points_dist, dist, closing_speed))
                             next_car_found = True
-                            break  # limiting myself to one next car (not aggregating over all cars forward)
+                            break  # limiting myself to one next car (not aggregating over all paths forward)
                         else:
                             next_lane_len = get_lane_len(next_lane)
                             if lane_points_dist_up_now + next_lane_len < min_lane_points_forward:
