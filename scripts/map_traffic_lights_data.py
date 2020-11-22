@@ -1423,7 +1423,12 @@ def get_traffic_light_predictions_per_intersection(tl_predictions_base_name):
     return intersection_2_predictions
 
 
-def get_agent_lanes_info(frame_sample, intersection_2_predictions, min_lane_points_forward=30):
+######################
+# precomputing speed limits per lanes
+lane_id_2_speed_limit = {lane_id: proto_API.get_speed_limit(lane_id) for lane_id in lane_id_2_idx}
+
+
+def get_agent_lanes_info(frame_sample, intersection_2_predictions, min_lane_points_forward=10, max_speed_limit=18):
     timestamp = datetime.fromtimestamp(frame_sample['timestamp'] / 10 ** 9).astimezone(timezone('US/Pacific'))
     scene_idx = frame_sample['scene_index']
     track_speed_yaw_lane_point_list = []
@@ -1477,7 +1482,8 @@ def get_agent_lanes_info(frame_sample, intersection_2_predictions, min_lane_poin
                 green_prob, tl_tte_mode, tl_tte_25th_perc, tl_tte_75th_perc = 1.1, 6, 6, 6
             track_speed_yaw_lane_point_list.append([agent_centroid, agent_track_id, scene_idx, timestamp,
                                                     map_segment_group, agent_speed, agent_yaw, lane_id,
-                                                    lane_point_i, proto_API.get_speed_limit(lane_id) - agent_speed,
+                                                    lane_point_i,
+                                                    lane_id_2_speed_limit.get(lane_id, max_speed_limit) - agent_speed,
                                                     green_prob, tl_tte_mode, tl_tte_25th_perc, tl_tte_75th_perc])
 
         for lane_id, vals in lane_2_cars.items():
@@ -1553,7 +1559,6 @@ def get_agent_lanes_info(frame_sample, intersection_2_predictions, min_lane_poin
 
     # TODO: too long tuple, consider dataclass
     return track_speed_yaw_lane_point_list_final
-
 
 def agent_lanes_collate_fn(frames_batch,
                            intersection_2_predictions,

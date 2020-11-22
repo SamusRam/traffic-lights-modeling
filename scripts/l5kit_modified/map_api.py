@@ -535,9 +535,10 @@ class MapAPI:
         return False
 
     def get_speed_limit(self, lane_id, max_lim=18):
-        if lane_id not in self:
+        try:
+            lane_element = self[lane_id].element.lane
+        except KeyError:
             return max_lim
-        lane_element = self[lane_id].element.lane
         parent = lane_element.parent_segment_or_junction
         parent_id = self.id_as_str(parent)
         parent_element = self[parent_id].element
