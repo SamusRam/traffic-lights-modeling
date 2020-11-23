@@ -1428,9 +1428,41 @@ def get_traffic_light_predictions_per_intersection(tl_predictions_base_name):
 lane_id_2_speed_limit = {lane_id: proto_API.get_speed_limit(lane_id) for lane_id in lane_id_2_idx}
 
 
-def get_agent_lanes_info(frame_sample, intersection_2_predictions, min_lane_points_forward=10, max_speed_limit=18):
-    timestamp = frame_sample['timestamp'] #datetime.fromtimestamp(frame_sample['timestamp'] / 10 ** 9).astimezone(timezone('US/Pacific'))
+def get_agent_lanes_info(frame_sample, intersection_2_predictions,
+                         min_lane_points_forward=10, max_speed_limit=18):
+    timestamp = frame_sample[
+        'timestamp']  # datetime.fromtimestamp(frame_sample['timestamp'] / 10 ** 9).astimezone(timezone('US/Pacific'))
     scene_idx = frame_sample['scene_index']
+    state_idx = frame_sample['state_index']
+
+    # for optimization purposes considering only cars belonging to the same intersection as ego sdv
+    ego_centroid = frame_sample['ego_centroid']
+    ego_yaw = frame_sample['ego_yaw']
+    ego_closest_lane_id, ego_lane_point_i = find_closest_lane(ego_centroid, ego_yaw, agent_class=ALL_WHEELS_CLASS,
+                                                              return_point_i=True)
+
+    lane_2_cars = defaultdict(list)
+    ego_speed = np.hypot(*frame_sample['ego_speed']) if frame_sample['ego_speed'] is not None else 0.0
+    lane_2_cars[ego_closest_lane_id].append((ego_lane_point_i, ego_centroid, ego_speed, ego_yaw))
+    if ego_closest_lane_id in lane_2_master_intersection_related_lanes:
+        ego_intersection_i = lane_id_2_master_intersection_idx[ego_closest_lane_id]
+
+        tl_events_pred_current_list = []
+        for intersection_pred_df in intersection_2_predictions[ego_intersection_i]:
+            try:
+                tl_events_pred_current_list.append(intersection_pred_df.loc[(scene_idx, state_idx)])
+            except KeyError:
+                pass
+        if len(tl_events_pred_current_list) == 0:
+            tl_events_pred_current = None
+        else:
+            tl_events_pred_current = defaultdict(list)
+            for tl_events_pred_current_series in tl_events_pred_current_list:
+                for colname, val in tl_events_pred_current_series.iteritems():
+                    tl_events_pred_current[colname].append(val)
+            tl_events_pred_current = {key: np.nanmean(vals) for key, vals in tl_events_pred_current.items()}
+    else:
+        tl_events_pred_current = None
     track_speed_yaw_lane_point_list = []
     track_speed_yaw_lane_point_list_final = []
     agents_with_wheels = [(agent, ALL_WHEELS_CLASS) for
@@ -1438,7 +1470,6 @@ def get_agent_lanes_info(frame_sample, intersection_2_predictions, min_lane_poin
     # agents_with_wheels = [(agent, ALL_WHEELS_CLASS if np.nonzero(agent[-1])[0][0] == CAR_CLASS else BIKE_CLASS) for
     #                       agent in frame_sample['agents'] if np.nonzero(agent[-1])[0][0] in [CAR_CLASS, BIKE_CLASS]]
     # lane_id -> List[(point_i, centroid, speed, yaw)]
-    lane_2_cars = defaultdict(list)
     for agent, agent_class in agents_with_wheels:
         agent_track_id = agent[-2]
         agent_speed = np.hypot(*agent[-3])
@@ -1460,26 +1491,19 @@ def get_agent_lanes_info(frame_sample, intersection_2_predictions, min_lane_poin
 
             # adding traffic light predictions
             if lane_id in controlled_lane_id_2_tl_signal_idx:
-                # scene_idx	scene_frame_idx	10_green_prob	10_tte_mode	10_tte_25th_perc	10_tte_75th_perc
                 tl_signal_idx = controlled_lane_id_2_tl_signal_idx[lane_id]
-                intersections_i = tl_signal_idx_2_master_intersection_idx[tl_signal_idx]
-                green_prob_list, tl_tte_mode_list_list, tl_tte_25th_perc_list, tl_tte_75th_perc_list = [], [], [], []
-                state_idx = frame_sample['state_index']
-                for intersection_pred_df in intersection_2_predictions[intersections_i]:
-                    if (scene_idx, state_idx) in intersection_pred_df.index:
-                        tl_events_pred_current = intersection_pred_df.loc[(scene_idx, state_idx)]
-                        green_prob_list.append(tl_events_pred_current[f'{tl_signal_idx}_green_prob'])
-                        tl_tte_mode_list_list.append(tl_events_pred_current[f'{tl_signal_idx}_tte_mode'])
-                        tl_tte_25th_perc_list.append(tl_events_pred_current[f'{tl_signal_idx}_tte_25th_perc'])
-                        tl_tte_75th_perc_list.append(tl_events_pred_current[f'{tl_signal_idx}_tte_75th_perc'])
-                green_prob, tl_tte_mode, tl_tte_25th_perc, tl_tte_75th_perc = [np.nanmean(x) for x in [green_prob_list,
-                                                                                                       tl_tte_mode_list_list,
-                                                                                                       tl_tte_25th_perc_list,
-                                                                                                       tl_tte_75th_perc_list]]
+                intersection_i = tl_signal_idx_2_master_intersection_idx[tl_signal_idx]
+                if tl_events_pred_current is not None and ego_intersection_i == intersection_i:
+                    green_prob = tl_events_pred_current[f'{tl_signal_idx}_green_prob']
+                    tl_tte_mode = tl_events_pred_current[f'{tl_signal_idx}_tte_mode']
+                    tl_tte_25th_perc = tl_events_pred_current[f'{tl_signal_idx}_tte_25th_perc']
+                    tl_tte_75th_perc = tl_events_pred_current[f'{tl_signal_idx}_tte_75th_perc']
+                else:
+                    green_prob, tl_tte_mode, tl_tte_25th_perc, tl_tte_75th_perc = 1.1, 6, 6, 6
 
             else:
                 green_prob, tl_tte_mode, tl_tte_25th_perc, tl_tte_75th_perc = 1.1, 6, 6, 6
-            track_speed_yaw_lane_point_list.append([agent_centroid, agent_track_id, scene_idx, timestamp,
+            track_speed_yaw_lane_point_list.append([*agent_centroid, agent_track_id, scene_idx, timestamp,
                                                     map_segment_group, agent_speed, agent_yaw, lane_id,
                                                     lane_point_i,
                                                     lane_id_2_speed_limit.get(lane_id, max_speed_limit) - agent_speed,
@@ -1495,10 +1519,11 @@ def get_agent_lanes_info(frame_sample, intersection_2_predictions, min_lane_poin
     encountered_lanes = set(lane_2_cars.keys())
 
     for lane_info_entry in track_speed_yaw_lane_point_list:
-        (agent_centroid, _, _, _,
+        (agent_centroid_x, agent_centroid_y, _, _, _,
          _, agent_speed, agent_yaw, lane_id,
          lane_point_i, _, _, _, _, _) = lane_info_entry
         track_speed_yaw_lane_point_list_final.append(lane_info_entry.copy())
+        agent_centroid = np.array([agent_centroid_x, agent_centroid_y])
 
         ################################
         # next car estimation
@@ -1535,7 +1560,7 @@ def get_agent_lanes_info(frame_sample, intersection_2_predictions, min_lane_poin
                             queue.append(
                                 (next_lane_len, lane_points_dist_up_now + next_lane_len < min_lane_points_forward))
 
-        if len(track_speed_yaw_lane_point_list_final[-1]) == 14:
+        if len(track_speed_yaw_lane_point_list_final[-1]) == 15:
             track_speed_yaw_lane_point_list_final[-1].extend(
                 (min_lane_points_forward, min_lane_points_forward * 20, -10))
 
@@ -1560,6 +1585,29 @@ def get_agent_lanes_info(frame_sample, intersection_2_predictions, min_lane_poin
     return track_speed_yaw_lane_point_list_final
 
 
+LANE_SEQ_DTYPE = [
+    ("agent_centroid_x", np.float64),
+    ("agent_centroid_y", np.float64),
+    ("agent_track_id", np.int64),
+    ("scene_idx", np.int64),
+    ("timestamp", np.int64),
+    ("map_segment_group", np.int8),
+    ("agent_speed", np.float64),
+    ("agent_yaw", np.float64),
+    ("lane_id", "<U16"),
+    ("lane_point_i", np.int8),
+    ("remaining_speed_lim", np.float64),
+    ("green_prob", np.float64),
+    ("tl_tte_mode", np.float64),
+    ("tl_tte_25th_perc", np.float64),
+    ("tl_tte_75th_perc", np.float64),
+    ("next_car_lane_points_dist", np.float64),
+    ("next_car_dist", np.float64),
+    ("next_car_closing_speed", np.float64),
+    ("yield_closest_dist", np.float64),
+    ("yield_speed_of_closest", np.float64)
+]
+
 def agent_lanes_collate_fn(frames_batch,
                            intersection_2_predictions,
                            timestamp_min=datetime(1970, 11, 20).astimezone(timezone('US/Pacific')),
@@ -1569,67 +1617,6 @@ def agent_lanes_collate_fn(frames_batch,
         timestamp = datetime.fromtimestamp(frame['timestamp'] / 10 ** 9).astimezone(timezone('US/Pacific'))
         if timestamp_min < timestamp <= timestamp_max:
             agent_lanes_info = get_agent_lanes_info(frame, intersection_2_predictions)
-            print(f'"{len(agent_lanes_info)}"')
             batch_result.extend(agent_lanes_info)
-    return np.array(batch_result)
+    return np.array([tuple(x) for x in batch_result], dtype=LANE_SEQ_DTYPE)
 
-
-# memory intensive
-def get_agent_lanes_df(dataloader_frames):
-    (agent_centroid_list, agent_track_id_list, scene_idx_list, timestamp_list,
-     map_segment_group_list, agent_speed_list, agent_yaw_list, lane_id_list,
-     lane_point_i_list, remaining_speed_lim_list,
-     green_prob_list, tl_tte_mode_list, tl_tte_25th_perc_list, tl_tte_75th_perc_list,
-     next_car_lane_points_dist_list,
-     next_car_dist_list, next_car_closing_speed_list,
-     yield_closest_dist_list, yield_speed_of_closest_list) = [[] for _ in range(19)]
-    for batch in tqdm(dataloader_frames, desc='Agents info events...'):
-        for record in batch:
-            (agent_centroid, agent_track_id, scene_idx, timestamp,
-             map_segment_group, agent_speed,
-             agent_yaw, lane_id, lane_point_i, remaining_speed_lim,
-             green_prob, tl_tte_mode, tl_tte_25th_perc, tl_tte_75th_perc,
-             next_car_lane_points_dist,
-             next_car_dist, next_car_closing_speed, yield_closest_dist, yield_speed_of_closest) = record
-            agent_centroid_list.append(agent_centroid)
-            agent_track_id_list.append(agent_track_id)
-            scene_idx_list.append(scene_idx)
-            timestamp_list.append(timestamp)
-            map_segment_group_list.append(map_segment_group)
-            agent_speed_list.append(agent_speed)
-            agent_yaw_list.append(agent_yaw)
-            lane_id_list.append(lane_id)
-            lane_point_i_list.append(lane_point_i)
-            remaining_speed_lim_list.append(remaining_speed_lim)
-            green_prob_list.append(green_prob)
-            tl_tte_mode_list.append(tl_tte_mode)
-            tl_tte_25th_perc_list.append(tl_tte_25th_perc)
-            tl_tte_75th_perc_list.append(tl_tte_75th_perc)
-            next_car_lane_points_dist_list.append(next_car_lane_points_dist)
-            next_car_dist_list.append(next_car_dist)
-            next_car_closing_speed_list.append(next_car_closing_speed)
-            yield_closest_dist_list.append(yield_closest_dist)
-            yield_speed_of_closest_list.append(yield_speed_of_closest)
-
-    agent_lanes_df = pd.DataFrame({'agent_track_id': agent_track_id_list,
-                                   'scene_idx': scene_idx_list,
-                                   'timestamp': timestamp_list,
-                                   'map_segment_group': map_segment_group_list,
-                                   'agent_centroid': agent_centroid_list,
-                                   'agent_speed': agent_speed_list,
-                                   'agent_yaw': agent_yaw_list,
-                                   'lane_id': lane_id_list,
-                                   'lane_point_i': lane_point_i_list,
-                                   'remaining_speed_lim': remaining_speed_lim_list,
-                                   'green_prob': green_prob_list,
-                                   'tl_tte_mode': tl_tte_mode_list,
-                                   'tl_tte_25th_perc': tl_tte_25th_perc_list,
-                                   'tl_tte_75th_perc': tl_tte_75th_perc_list,
-                                   'next_car_lane_points_dist': next_car_lane_points_dist_list,
-                                   'next_car_dist': next_car_dist_list,
-                                   'next_car_closing_speed': next_car_closing_speed_list,
-                                   'yield_closest_dist': yield_closest_dist_list,
-                                   'yield_speed_of_closest': yield_speed_of_closest_list
-                                   })
-    agent_lanes_df.sort_values(by=['agent_track_id', 'scene_idx', 'timestamp'], inplace=True)
-    return agent_lanes_df

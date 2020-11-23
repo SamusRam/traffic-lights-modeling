@@ -73,28 +73,6 @@ output_dataset_path = f'../input/agent_lane_seq_df_{zarr_basename}_{fold_i}.zarr
 
 
 ###### creating separate zarr datasets for smaller time intervals, structural numpy arrays inside
-LANE_SEQ_DTYPE = [
-    ("agent_centroid", np.float64, (2,)),
-    ("agent_track_id", np.int64),
-    ("scene_idx", np.int64),
-    ("timestamp", np.int64),
-    ("map_segment_group", np.int8),
-    ("agent_speed", np.float64),
-    ("agent_yaw", np.float64),
-    ("lane_id", "<U16"),
-    ("lane_point_i", np.int8),
-    ("remaining_speed_lim", np.float64),
-    ("green_prob", np.float64),
-    ("tl_tte_mode", np.float64),
-    ("tl_tte_25th_perc", np.float64),
-    ("tl_tte_75th_perc", np.float64),
-    ("next_car_lane_points_dist", np.float64),
-    ("next_car_dist", np.float64),
-    ("next_car_closing_speed", np.float64),
-    ("yield_closest_dist", np.float64),
-    ("yield_speed_of_closest", np.float64)
-]
-
 zarr_dataset_root = zarr.open_group(output_dataset_path, mode='w')
 
 # estimating sizes of each time-interval group
@@ -134,7 +112,7 @@ for key_i in range(len(boarder_timestamps_all) - 1):
 # some scenes would be splitted by the time split of the full train, but it should be negligible
 for batch in tqdm(dataloader_frames, desc='Agents info events...'):
     for record in batch:
-        timestamp = record[3]
+        timestamp = record[4]
         time_interval_idx = bisect.bisect_right(boarder_timestamps_all, timestamp) - 1
         next_entry_i = timeinterval_i_2_write_buffer_size[time_interval_idx]
         for dtype_entry, val in zip(LANE_SEQ_DTYPE, record):
@@ -169,5 +147,5 @@ for timeinterval_i, zarr_key_name in enumerate(zarr_keys):
     # record true sizes
     buff_size = timeinterval_i_2_write_buffer_size[timeinterval_i]
     total_size = dataset_i_start + buff_size
-    with open(f'../input/{output_dataset_path.replace(".", "_")}_zarr_key_name_size.pkl', 'wb') as f:
+    with open(f'{output_dataset_path.replace(".zarr", "_zarr")}_{zarr_key_name}_size.pkl', 'wb') as f:
         pickle.dump(total_size, f)
