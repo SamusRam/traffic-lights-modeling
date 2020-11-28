@@ -582,7 +582,8 @@ class MapAPI:
                 return speed_limit
         return max_lim
 
-    def get_rules_for_traffic_light_face_set(self, traffic_light_face_set):
+    @staticmethod
+    def get_rules_for_traffic_light_face_set(traffic_light_face_set):
         """
         Args:
 
