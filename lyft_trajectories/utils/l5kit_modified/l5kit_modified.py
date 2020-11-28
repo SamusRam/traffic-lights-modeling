@@ -184,7 +184,7 @@ class FramesDataset(Dataset):
 
         if with_history:
             raise NotImplementedError
-        elif agents_from_standard_mask_only:
+        if agents_from_standard_mask_only:
             self.sample_function = partial(
                 generate_frame_sample_without_hist,
                 agents=zarr_root[AGENT_ARRAY_KEY],
