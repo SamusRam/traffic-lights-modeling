@@ -12,7 +12,11 @@ args = parser.parse_args()
 events_basename = args.events_basename
 predictions_basename = args.predictions_basename
 N_INTERSECTIONS = 10
-logger = logging.getLogger(__name__)
+logging.basicConfig()
+logging.root.setLevel(logging.INFO)
+logger = logging.getLogger(
+    f"Combining TL predictions with observations ({events_basename})"
+)
 logger.info(
     f"Events observed: {events_basename}, predictions for all events: {predictions_basename}"
 )

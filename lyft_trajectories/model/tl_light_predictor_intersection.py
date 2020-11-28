@@ -34,7 +34,7 @@ parser.add_argument("--batch-size", default=128, type=int)
 parser.add_argument("--num-workers", default=8, type=int)
 parser.add_argument("--predict", action="store_true")
 parser.add_argument("--epoch-max", default=5, type=int)
-parser.add_argument("--different-gpu", action="store_true")
+parser.add_argument("--gpu-i", default="0")
 parser.add_argument("--prediction-id", default="")
 
 args = parser.parse_args()
@@ -48,7 +48,7 @@ output_name = args.output_name
 val_file_name = args.val_file_name
 perform_prediction = args.predict
 epoch_max = args.epoch_max
-different_gpu = args.different_gpu
+gpu_i = args.gpu_i
 prediction_id = args.prediction_id
 
 lr = 6e-5
@@ -63,10 +63,7 @@ early_stopping_patience = 2
 
 
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-if different_gpu:
-    os.environ["CUDA_VISIBLE_DEVICES"] = str((int(fold_i) + 1) % 2)
-else:
-    os.environ["CUDA_VISIBLE_DEVICES"] = fold_i
+os.environ["CUDA_VISIBLE_DEVICES"] = gpu_i
 
 TRAIN_INPUT_PATHS = [f"input/{trn_name}" for trn_name in dataset_names]
 print("TRAIN_INPUT_PATHS", TRAIN_INPUT_PATHS)

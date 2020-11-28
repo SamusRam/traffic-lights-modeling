@@ -21,7 +21,7 @@ from scipy.spatial import KDTree
 from sklearn.cluster import KMeans
 from collections import defaultdict, deque
 import bisect
-from typing import Callable, Dict, List, Set
+from typing import Callable, Dict, List, Set, Tuple
 from torch.utils.data import DataLoader
 
 os.environ["L5KIT_DATA_FOLDER"] = "input/"
@@ -1175,7 +1175,7 @@ def find_closest_lane(
     coord: np.ndarray,
     yaw: float,
     agent_class: int,
-    lane_point_2_blocked_lanes_set: Dict[(str, int), set] = None,
+    lane_point_2_blocked_lanes_set: Dict[Tuple, Set] = None,
     max_dist_m: float = 4.0,
     k_nearest: int = 25,
     return_point_i: bool = False,
