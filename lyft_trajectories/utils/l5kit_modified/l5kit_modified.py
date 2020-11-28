@@ -59,7 +59,7 @@ def generate_frame_sample_without_hist(
         masked_agent_indices = [
             el[0] for el in mask_agent_indices[masked_indices_slice]
         ]
-        if len(masked_agent_indices):
+        if masked_agent_indices:
             agents = agents.get_coordinate_selection(masked_agent_indices).copy()
         else:
             agents = []
@@ -155,7 +155,7 @@ def get_agent_indices_set(
             }
             results.append(agents_indices_removed)
 
-    if len(results):
+    if results:
         results = [results[i] for i in orig_indices_order]
     return results
 
