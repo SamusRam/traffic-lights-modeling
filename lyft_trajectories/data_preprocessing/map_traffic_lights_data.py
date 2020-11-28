@@ -802,9 +802,7 @@ tl_face_id_2_tl_signal_indices_path = "input/tl_face_id_2_tl_signal_indices.pkl"
 tl_signal_idx_2_controlled_lanes_path = "input/tl_signal_idx_2_controlled_lanes.pkl"
 tl_signal_idx_2_exit_lanes_path = "input/tl_signal_idx_2_exit_lanes.pkl"
 tl_signal_idx_2_stop_coordinates_path = "input/tl_signal_idx_2_stop_coordinates.pkl"
-controlled_lane_id_2_tl_signal_idx_path = (
-    "input/controlled_lane_id_2_tl_signal_idx.pkl"
-)
+controlled_lane_id_2_tl_signal_idx_path = "input/controlled_lane_id_2_tl_signal_idx.pkl"
 exit_lane_id_2_tl_signal_idx_path = "input/exit_lane_id_2_tl_signal_idx.pkl"
 if os.path.exists(master_intersection_idx_2_tl_signal_indices_path):
     with open(master_intersection_idx_2_tl_signal_indices_path, "rb") as f:
