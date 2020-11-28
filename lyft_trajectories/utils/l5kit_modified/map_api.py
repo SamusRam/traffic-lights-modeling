@@ -634,12 +634,11 @@ class MapAPI:
     def __getitem__(self, item: Union[int, str, bytes]) -> MapElement:
         if isinstance(item, str):
             return self.elements[self.ids_to_el[item]]
-        elif isinstance(item, int):
+        if isinstance(item, int):
             return self.elements[item]
-        elif isinstance(item, bytes):
+        if isinstance(item, bytes):
             return self.elements[self.ids_to_el[item.decode(ENCODING)]]
-        else:
-            raise TypeError("only str, bytes and int are allowed in API __getitem__")
+        raise TypeError("only str, bytes and int are allowed in API __getitem__")
 
     def __len__(self) -> int:
         return len(self.elements)
