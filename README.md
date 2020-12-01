@@ -24,12 +24,13 @@ The sequence of observed traffic lights and lanes form an input for an RNN:
 Based on the limited observations we can heuristically guess some traffic light statuses and use it as labels. 
 
 For the illustration please consider the GIF below. 
-
-    * First, we observe red traffic light, so we know its status forsure.
-
-    * Next, we observe idle vehicles, so we derive that the correspondingtraffic light to be red.
-    * Later, we observe vehicles exiting lanes controlled by a traffic light, therefore we derive that thetraffic light has a green color, etc.
 ![](input/heuristic_labels.gif)
+In this gif:
+   * First, we observe red traffic light, so we know its status for sure.
+
+   * Next, we observe idle vehicles, so we derive that the corresponding traffic light to be red.
+   * Later, we observe vehicles exiting lanes controlled by a traffic light, therefore we derive that the traffic light has a green color, etc.
+
 
 ### Model
 A bidirectional LSTM model. 
