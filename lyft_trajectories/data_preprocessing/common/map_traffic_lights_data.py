@@ -1,6 +1,6 @@
 import os
-from ..utils.l5kit_modified.map_api import MapAPI
-from .lane_processing import (
+from lyft_trajectories.utils.l5kit_modified.map_api import MapAPI
+from lyft_trajectories.data_preprocessing.common.lane_processing import (
     precompute_lane_adjacencies,
     precompute_map_elements,
     semantic_map_key,
@@ -961,7 +961,7 @@ kd_tree_intersection, kd_idx_2_lane_id_idx_intersection = get_kd_tree_and_idx_ma
 )
 
 
-def get_traffic_light_coordinates():
+def get_traffic_light_coordinates(el_id):
     if el_id in proto_API.ids_to_el:
         coordinates = proto_API.get_traffic_light_coords(el_id)["xyz"]
         return coordinates[:, :2].mean(axis=0)
@@ -1636,7 +1636,7 @@ def tl_seq_collate_fn(
                         tl_signals_STOP,
                     )
                 )
-    return np.array(batch_result)
+    return batch_result
 
 
 def get_tl_events_df(dataloader_frames: DataLoader):

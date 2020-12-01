@@ -1,7 +1,7 @@
 import os
 import pandas as pd
 import numpy as np
-from ..data_preprocessing.map_traffic_lights_data import (
+from lyft_trajectories.data_preprocessing.common.map_traffic_lights_data import (
     master_intersection_idx_2_tl_signal_indices,
 )
 
@@ -66,7 +66,6 @@ os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
 os.environ["CUDA_VISIBLE_DEVICES"] = gpu_i
 
 TRAIN_INPUT_PATHS = [f"input/{trn_name}" for trn_name in dataset_names]
-print("TRAIN_INPUT_PATHS", TRAIN_INPUT_PATHS)
 VAL_INPUT_PATH = f"input/{val_file_name}"
 HIST_LEN_FRAMES = 100
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -107,17 +106,9 @@ def compute_last_valid_idx_for_seq(tl_events_df):
 
 if "valid_hist_len" not in tl_events_df_trn.columns:
     compute_last_valid_idx_for_seq(tl_events_df_trn)
-    if len(TRAIN_INPUT_PATHS) == 1:
-        tl_events_df_trn.to_hdf(TRAIN_INPUT_PATHS[0], key="data")
-    elif output_name != "":
-        tl_events_df_trn.to_hdf(
-            os.path.join("input", f"{output_name}.hdf5"), key="data"
-        )
-    else:
-        print("Warn! Not storing the precomputed results!")
+
 if not perform_prediction and "valid_hist_len" not in tl_events_df_val.columns:
     compute_last_valid_idx_for_seq(tl_events_df_val)
-
 
 if not perform_prediction:
     train_vocab = dict()
@@ -342,11 +333,11 @@ class IntersectionDataset(Dataset):
             self.history_len_records, self.tl_events_df["valid_hist_len"].iloc[row_i]
         )
         raw_inputs_hist = self.tl_events_df["rnn_inputs_raw"].iloc[
-            row_i - valid_hist_len + 1 : row_i + 1
+            row_i - valid_hist_len : row_i + 1
         ]
 
         tokens_list, token_type_ohe_list, token_timesteps_list = [], [], []
-        timestap = valid_hist_len
+        timestap = valid_hist_len + 1
         for timestep_events in raw_inputs_hist:
             for token, token_type_ohe in timestep_events:
                 # zero-max normalization

@@ -1,4 +1,4 @@
-from ..data_preprocessing.map_traffic_lights_data import (
+from lyft_trajectories.data_preprocessing.common.map_traffic_lights_data import (
     find_closest_lane,
     get_lane_center_line,
     get_lane_len,

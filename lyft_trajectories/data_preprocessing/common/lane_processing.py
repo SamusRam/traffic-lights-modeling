@@ -1,4 +1,4 @@
-from ..utils.l5kit_modified.map_api import MapAPI
+from lyft_trajectories.utils.l5kit_modified.map_api import MapAPI
 import numpy as np
 from tqdm.auto import tqdm
 from typing import Dict

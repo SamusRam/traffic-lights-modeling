@@ -1,5 +1,5 @@
 import os
-from .map_traffic_lights_data import (
+from lyft_trajectories.data_preprocessing.common.map_traffic_lights_data import (
     tl_seq_collate_fn,
     get_tl_events_df,
     compute_tl_signal_classes,
@@ -44,7 +44,7 @@ print("=" * 20)
 os.environ["L5KIT_DATA_FOLDER"] = "input/"
 dm = LocalDataManager()
 dataset_path = dm.require(
-    f"scenes/{input_name}_filtered_min_frame_history_4_min_frame_future_1_with_mask_idx.zarr"
+    f"scenes/{input_name}_filtered_min_frame_history_4_min_frame_future_{1 if input_name != 'test' else 0}_with_mask_idx.zarr"
 )
 
 frame_dataset = FramesDataset(dataset_path, return_indices=True)

@@ -253,9 +253,6 @@ class FramesDataset(Dataset):
         return results
 
     def __getitem__(self, index: int) -> dict:
-        """
-        Differs from parent by iterating on agents and not AV.
-        """
         if index < 0:
             if -index > len(self):
                 raise ValueError(

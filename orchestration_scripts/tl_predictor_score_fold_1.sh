@@ -1,7 +1,7 @@
 #!/bin/bash
 for i in {0..9}
 do
-  python -m lyft_trajectories.model.tl_light_predictor_intersection --gpu-i 1 --fold-i 1 --trn-dataset-names "tl_events_df_validate_0_intersection_${i}.hdf5" --predict --intersection-i "${i}" --batch-size 512 --prediction-id 'validate'
-  python -m lyft_trajectories.model.tl_light_predictor_intersection --gpu-i 1 --fold-i 1 --trn-dataset-names "tl_events_df_test_0_intersection_${i}.hdf5" --predict --intersection-i "${i}" --batch-size 512 --prediction-id 'test'
-  python -m lyft_trajectories.model.tl_light_predictor_intersection --gpu-i 1 --fold-i 1 --trn-dataset-names "tl_events_df_train_full_1_intersection_${i}.hdf5" --predict --intersection-i "${i}" --batch-size 512
+  python -m lyft_trajectories.model.tl_light_predictor_intersection --gpu-i 1 --fold-i 1 --dataset-names "tl_events_df_validate_0_intersection_${i}.hdf5" --predict --intersection-i "${i}" --batch-size 512 --prediction-id 'validate'
+  python -m lyft_trajectories.model.tl_light_predictor_intersection --gpu-i 1 --fold-i 1 --dataset-names "tl_events_df_test_0_intersection_${i}.hdf5" --predict --intersection-i "${i}" --batch-size 512 --prediction-id 'test'
+  python -m lyft_trajectories.model.tl_light_predictor_intersection --gpu-i 1 --fold-i 1 --dataset-names "tl_events_df_train_full_1_intersection_${i}.hdf5" --predict --intersection-i "${i}" --batch-size 512
 done
