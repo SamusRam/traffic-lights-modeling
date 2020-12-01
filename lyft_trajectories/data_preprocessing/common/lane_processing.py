@@ -32,9 +32,7 @@ def densify_sparse_segments(
     max_diff: float = 0.01,
 ):
     # the operation is done just once, so performing it naively
-    if len(x_coordinates_seq_np) != len(
-        y_coordinates_seq_np
-    ):
+    if len(x_coordinates_seq_np) != len(y_coordinates_seq_np):
         raise AssertionError("Different lens of x/y coordinates")
     x_final_seq_np = np.array([])
     y_final_seq_np = np.array([])
@@ -240,9 +238,10 @@ def precompute_map_elements(proto_API: MapAPI):
             ) = get_lane_segments_sin_cosine(center_line)
             lane_point_idx_2_sin_cos_forward.append(idx_2_sin_cos_forward)
             lane_point_idx_2_sin_cos_backward.append(idx_2_sin_cos_backward)
-            if not (len(idx_2_sin_cos_forward) == len(idx_2_sin_cos_backward) and len(
-                idx_2_sin_cos_forward
-            ) == len(center_line)):
+            if not (
+                len(idx_2_sin_cos_forward) == len(idx_2_sin_cos_backward)
+                and len(idx_2_sin_cos_forward) == len(center_line)
+            ):
                 raise AssertionError
 
         if proto_API.is_crosswalk(element):

@@ -231,7 +231,8 @@ for fix_i, turn_under_red_fix in enumerate(turn_under_red_fixes):
             lanes_specialized[lane_spec]["center_line"][
                 lane_id_2_idx_specialized[lane_spec][lane_to_remove]
             ]
-        ) < 4
+        )
+        < 4
     ):
         raise AssertionError
     if (
@@ -239,7 +240,8 @@ for fix_i, turn_under_red_fix in enumerate(turn_under_red_fixes):
             lanes_specialized[lane_spec]["center_line"][
                 lane_id_2_idx_specialized[lane_spec][lanes_active[0]]
             ]
-        ) < 5
+        )
+        < 5
     ):
         raise AssertionError
 
@@ -681,7 +683,8 @@ for tls_united_by_lane in lane_2_close_tl_controls.values():
         if tl_id in traffic_light_id_2_master_intersection_idx:
             if master_intersection_idx is not None:
                 if (
-                    traffic_light_id_2_master_intersection_idx[tl_id] != master_intersection_idx
+                    traffic_light_id_2_master_intersection_idx[tl_id]
+                    != master_intersection_idx
                 ):
                     raise AssertionError(
                         f"tl_id: {tl_id}",
@@ -693,7 +696,8 @@ for tls_united_by_lane in lane_2_close_tl_controls.values():
                     tl_id
                 ]
             if (
-                tl_id not in master_intersection_idx_2_traffic_lights[master_intersection_idx]
+                tl_id
+                not in master_intersection_idx_2_traffic_lights[master_intersection_idx]
             ):
                 raise AssertionError
         else:
@@ -1347,7 +1351,9 @@ for i, lane_id in tqdm(
             or closest_lane_id == lane_id
             and point_idx == closest_lane_point_i
         ):
-            raise AssertionError(f"closest_lane_id: {closest_lane_id}[{closest_lane_point_i}], (true lane_id: {lane_id}[{point_idx}])")
+            raise AssertionError(
+                f"closest_lane_id: {closest_lane_id}[{closest_lane_point_i}], (true lane_id: {lane_id}[{point_idx}])"
+            )
         blocked_set_so_far.update(blocked_tl_signals)
         lane_point_2_blocked_lanes_set[(lane_id, point_idx)] = deepcopy(
             blocked_set_so_far
