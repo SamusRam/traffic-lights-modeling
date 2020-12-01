@@ -1,4 +1,4 @@
-from ..utils.l5kit_modified.map_api import MapAPI
+from lyft_trajectories.utils.l5kit_modified.map_api import MapAPI
 import numpy as np
 from tqdm.auto import tqdm
 from typing import Dict
@@ -32,9 +32,8 @@ def densify_sparse_segments(
     max_diff: float = 0.01,
 ):
     # the operation is done just once, so performing it naively
-    assert len(x_coordinates_seq_np) == len(
-        y_coordinates_seq_np
-    ), "Different lens of x/y coordinates"
+    if len(x_coordinates_seq_np) != len(y_coordinates_seq_np):
+        raise AssertionError("Different lens of x/y coordinates")
     x_final_seq_np = np.array([])
     y_final_seq_np = np.array([])
     for i in range(0, len(x_coordinates_seq_np) - 1):
@@ -210,7 +209,8 @@ def precompute_map_elements(proto_API: MapAPI):
                 )
             else:
                 raise Exception("Bug in lane length comparison")
-            assert len(x_left) == len(x_right)
+            if len(x_left) != len(x_right):
+                raise AssertionError
 
             center_line = np.transpose(
                 np.vstack(((x_left + x_right) / 2, (y_left + y_right) / 2))
@@ -238,9 +238,11 @@ def precompute_map_elements(proto_API: MapAPI):
             ) = get_lane_segments_sin_cosine(center_line)
             lane_point_idx_2_sin_cos_forward.append(idx_2_sin_cos_forward)
             lane_point_idx_2_sin_cos_backward.append(idx_2_sin_cos_backward)
-            assert len(idx_2_sin_cos_forward) == len(idx_2_sin_cos_backward) and len(
-                idx_2_sin_cos_forward
-            ) == len(center_line)
+            if not (
+                len(idx_2_sin_cos_forward) == len(idx_2_sin_cos_backward)
+                and len(idx_2_sin_cos_forward) == len(center_line)
+            ):
+                raise AssertionError
 
         if proto_API.is_crosswalk(element):
             crosswalk = proto_API.get_crosswalk_coords(element_id)

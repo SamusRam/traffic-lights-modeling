@@ -1,6 +1,6 @@
 import os
-from ..utils.l5kit_modified.map_api import MapAPI
-from .lane_processing import (
+from lyft_trajectories.utils.l5kit_modified.map_api import MapAPI
+from lyft_trajectories.data_preprocessing.common.lane_processing import (
     precompute_lane_adjacencies,
     precompute_map_elements,
     semantic_map_key,
@@ -226,22 +226,24 @@ for fix_i, turn_under_red_fix in enumerate(turn_under_red_fixes):
         if x != parent
     ]
 
-    assert (
+    if (
         len(
             lanes_specialized[lane_spec]["center_line"][
                 lane_id_2_idx_specialized[lane_spec][lane_to_remove]
             ]
         )
-        >= 4
-    )
-    assert (
+        < 4
+    ):
+        raise AssertionError
+    if (
         len(
             lanes_specialized[lane_spec]["center_line"][
                 lane_id_2_idx_specialized[lane_spec][lanes_active[0]]
             ]
         )
-        >= 5
-    )
+        < 5
+    ):
+        raise AssertionError
 
     lanes_specialized[lane_spec]["ids"].extend(
         [f"lane{2 * fix_i}", f"lane{2 * fix_i + 1}"]
@@ -519,7 +521,8 @@ lane_ids_with_wrong_tl_associations = {
 tl_added_lane_id_2_tl_id = dict()
 for lanes, _, tl_id in added_lanes_tl_coord_tl_id:
     for lane_id in lanes:
-        assert lane_id not in tl_added_lane_id_2_tl_id
+        if lane_id in tl_added_lane_id_2_tl_id:
+            raise AssertionError
         tl_added_lane_id_2_tl_id[lane_id] = tl_id
         lane_2_close_tl_controls[lane_id].append(tl_id)
 
@@ -679,22 +682,24 @@ for tls_united_by_lane in lane_2_close_tl_controls.values():
     for tl_id in tls_united_by_lane:
         if tl_id in traffic_light_id_2_master_intersection_idx:
             if master_intersection_idx is not None:
-                assert (
+                if (
                     traffic_light_id_2_master_intersection_idx[tl_id]
-                    == master_intersection_idx
-                ), (
-                    f"tl_id: {tl_id}",
-                    f"traffic_light_id_2_master_intersection_idx[tl_id]: {traffic_light_id_2_master_intersection_idx[tl_id]}",
-                    f"master_intersection_idx: {master_intersection_idx}",
-                )
+                    != master_intersection_idx
+                ):
+                    raise AssertionError(
+                        f"tl_id: {tl_id}",
+                        f"traffic_light_id_2_master_intersection_idx[tl_id]: {traffic_light_id_2_master_intersection_idx[tl_id]}",
+                        f"master_intersection_idx: {master_intersection_idx}",
+                    )
             else:
                 master_intersection_idx = traffic_light_id_2_master_intersection_idx[
                     tl_id
                 ]
-            assert (
+            if (
                 tl_id
-                in master_intersection_idx_2_traffic_lights[master_intersection_idx]
-            )
+                not in master_intersection_idx_2_traffic_lights[master_intersection_idx]
+            ):
+                raise AssertionError
         else:
             if master_intersection_idx is None:
                 master_intersection_idx = len(master_intersection_idx_2_traffic_lights)
@@ -790,7 +795,8 @@ for master_intersection_idx, master_intersection_traffic_lights in enumerate(
                 )
 
 for tl_faces, intersection_idx_set in tl_faces_set_2_master_intersections.items():
-    assert len(intersection_idx_set) == 1, f"{tl_faces}, {intersection_idx_set}"
+    if len(intersection_idx_set) != 1:
+        raise AssertionError(f"{tl_faces}, {intersection_idx_set}")
     tl_faces_set_2_master_intersections[tl_faces] = list(intersection_idx_set)[0]
 # tl_signal_idx corresponds to the set of tl faces with the same set of lanes under control and therefore (presumably) the same signal
 
@@ -961,7 +967,7 @@ kd_tree_intersection, kd_idx_2_lane_id_idx_intersection = get_kd_tree_and_idx_ma
 )
 
 
-def get_traffic_light_coordinates():
+def get_traffic_light_coordinates(el_id):
     if el_id in proto_API.ids_to_el:
         coordinates = proto_API.get_traffic_light_coords(el_id)["xyz"]
         return coordinates[:, :2].mean(axis=0)
@@ -1304,7 +1310,8 @@ for i, lane_id in tqdm(
 ):
     lane_len = get_lane_len(lane_id)
     lane_center_line = get_lane_center_line(lane_id)
-    assert lane_len == len(lane_center_line)
+    if lane_len != len(lane_center_line):
+        raise AssertionError
     blocked_set_so_far = set()
     for point_idx in range(lane_len - 1, -1, -1):
         yaws = []
@@ -1339,11 +1346,14 @@ for i, lane_id in tqdm(
             return_blocked_tl_signals=True,
             intersections_only=True,
         )
-        assert (
+        if not (
             (lane_id, point_idx) in checked_hard_cases
             or closest_lane_id == lane_id
             and point_idx == closest_lane_point_i
-        ), f"closest_lane_id: {closest_lane_id}[{closest_lane_point_i}], (true lane_id: {lane_id}[{point_idx}])"
+        ):
+            raise AssertionError(
+                f"closest_lane_id: {closest_lane_id}[{closest_lane_point_i}], (true lane_id: {lane_id}[{point_idx}])"
+            )
         blocked_set_so_far.update(blocked_tl_signals)
         lane_point_2_blocked_lanes_set[(lane_id, point_idx)] = deepcopy(
             blocked_set_so_far
@@ -1636,7 +1646,7 @@ def tl_seq_collate_fn(
                         tl_signals_STOP,
                     )
                 )
-    return np.array(batch_result)
+    return batch_result
 
 
 def get_tl_events_df(dataloader_frames: DataLoader):

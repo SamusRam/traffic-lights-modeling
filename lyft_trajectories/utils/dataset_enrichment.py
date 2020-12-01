@@ -44,10 +44,12 @@ dm = LocalDataManager(None)
 dataset_zarr = ChunkedDataset(dm.require(dataset_path)).open(cached=False)
 
 if add_standard_mask_indices:
+    if min_frame_history > MIN_FRAME_HISTORY:
+        raise AssertionError("Standard mask is expected to be a subset of custom mask")
     agent_indices_set, indices_not_included_into_main_mask = get_agent_indices_set(
         dataset_zarr,
         min_frame_histories=[min_frame_history, MIN_FRAME_HISTORY],
-        min_frame_future=MIN_FRAME_FUTURE,
+        min_frame_future=MIN_FRAME_FUTURE if "test" not in dataset_path else 0,
         filter_agents_threshold=0.5,
     )
     num_agents_mask = len(agent_indices_set) - len(indices_not_included_into_main_mask)
@@ -75,6 +77,7 @@ if add_standard_mask_indices:
     MASK_AGENT_INDICES_ARRAY_DTYPE = [("agent_index", np.int64)]
     MASK_AGENT_INDICES_ARRAY_CHUNK_SIZE = AGENT_CHUNK_SIZE
 
+    print("!!!!! num_agents_mask", num_agents_mask)
     mask_agent_indices = root.require_dataset(
         MASK_AGENT_INDICES_ARRAY_KEY,
         dtype=MASK_AGENT_INDICES_ARRAY_DTYPE,
@@ -211,6 +214,10 @@ root.agents[agents_chunk_i * AGENT_CHUNK_SIZE[0] :] = agents_chunk_buffers[
     :agents_chunk_buffer_size
 ]
 if add_standard_mask_indices:
+    print(
+        "## mask_agent_indices_chunk_i * MASK_AGENT_INDICES_ARRAY_CHUNK_SIZE[0]",
+        mask_agent_indices_chunk_i * MASK_AGENT_INDICES_ARRAY_CHUNK_SIZE[0],
+    )
     root.mask_agent_indices[
         mask_agent_indices_chunk_i * MASK_AGENT_INDICES_ARRAY_CHUNK_SIZE[0] :
     ] = mask_agent_indices_chunk_buffers[:mask_agent_indices_chunk_buffer_size]
