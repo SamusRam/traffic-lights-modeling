@@ -44,9 +44,10 @@ dm = LocalDataManager(None)
 dataset_zarr = ChunkedDataset(dm.require(dataset_path)).open(cached=False)
 
 if add_standard_mask_indices:
-    assert (
-        min_frame_history <= MIN_FRAME_HISTORY
-    ), "Standard mask is expected to be a subset of custom mask"
+    if (
+        min_frame_history > MIN_FRAME_HISTORY
+    ):
+        raise AssertionError("Standard mask is expected to be a subset of custom mask")
     agent_indices_set, indices_not_included_into_main_mask = get_agent_indices_set(
         dataset_zarr,
         min_frame_histories=[min_frame_history, MIN_FRAME_HISTORY],
