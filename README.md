@@ -19,7 +19,7 @@ In this pet project, I attempt to estimate the statuses of all traffic lights ba
 ## Results overview (TL;DR)
 In my experiments, for this particular scene I got the following out-of-sample guesses:
   * After observing a single red light
-![](input/answer_1.jpg)
+![](input/answer_1.jpg|width=30)
 
   * After observing some vehicles in addition to the red traffic light:
 ![](input/answer_2.jpg)
@@ -43,6 +43,9 @@ For a better intuitive understanding of the underlying model, let me provide an 
 Each SDV's observation can be viewed as a separate word, and the green light can be viewed as a positive sentiment of a document, while the red light can be viewed as a negative sentiment. The main difference from LSTM-based classifiers in NLP is due to the fact that our observations are not evenly sampled in time, so we also use the time of each event. Also, we have different types of events (traffic light vs. idle vehicles vs. moving vehicles). This information is being leveraged by our model as well.
 
 In addition to guessing the traffic light statuses, I attempted to model Weibull distribution of the time remaining before the next color change. I based the experiments on [this work](http://publications.lib.chalmers.se/records/fulltext/253611/253611.pdf). The initial experiments did not give reasonable results: the mode of the remaining time decreases just slightly before the actual change. Likely, I've caused the issues by a very imbalanced dataset after I clipped the remaining time at 5 seconds, motivated by the fact that the Lyft level 5 challenge required prediction for the next 5 seconds. Sparse and noisy labels might have complicated the distribution modeling as well.
+
+Each traffic light has its own heads in the model. During training we update only heads for which we know the ground truth. During eval, all model heads are being scored.
+
 
 ### Inputs
 A sequence of available SDV's observations form an input for the RNN. Each observable traffic light would be one type of an event observed. Another type of an event would be moving vehicle on a particular lane. Finally, idle vehicles on a given lane correspond to another event type.
