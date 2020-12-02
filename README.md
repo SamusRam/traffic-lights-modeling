@@ -19,7 +19,7 @@ In this pet project, I attempt to estimate the statuses of all traffic lights ba
 ## Results overview (TL;DR)
 In my experiments, for this particular scene I got the following out-of-sample guesses:
   * After observing a single red light
-![](input/answer_1.jpg|width=30)
+![](input/answer_1.jpg)
 
   * After observing some vehicles in addition to the red traffic light:
 ![](input/answer_2.jpg)
