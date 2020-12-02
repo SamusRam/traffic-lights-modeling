@@ -44,6 +44,9 @@ Each SDV's observation can be viewed as a separate word, and the green light can
 
 In addition to guessing the traffic light statuses, I attempted to model Weibull distribution of the time remaining before the next color change. I based the experiments on [this work](http://publications.lib.chalmers.se/records/fulltext/253611/253611.pdf). The initial experiments did not give reasonable results: the mode of the remaining time decreases just slightly before the actual change. Likely, I've caused the issues by a very imbalanced dataset after I clipped the remaining time at 5 seconds, motivated by the fact that the Lyft level 5 challenge required prediction for the next 5 seconds. Sparse and noisy labels might have complicated the distribution modeling as well.
 
+Each traffic light has its own heads in the model. During training we update only heads for which we know the ground truth. During eval, all model heads are being scored.
+
+
 ### Inputs
 A sequence of available SDV's observations form an input for the RNN. Each observable traffic light would be one type of an event observed. Another type of an event would be moving vehicle on a particular lane. Finally, idle vehicles on a given lane correspond to another event type.
 
